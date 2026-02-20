@@ -1,0 +1,30 @@
+# JARVIS v1.0 Dependencies
+# All free, all offline-capable (except duckduckgo-search which needs internet for searches)
+
+# Speech-to-Text
+faster-whisper>=0.10.0
+
+# Audio I/O
+sounddevice>=0.4.6
+numpy>=1.24.0
+
+# Global Hotkey
+keyboard>=0.13.5
+
+# Vector Database (semantic memory)
+chromadb>=0.4.0
+
+# Web Search (free, no API key)
+duckduckgo-search>=6.0.0
+
+# HTTP client (for Ollama API)
+requests>=2.31.0
+
+# Environment config
+python-dotenv>=1.0.0
+
+# System monitoring
+psutil>=5.9.0
+
+# Backup TTS (Windows SAPI voices)
+pyttsx3>=2.90

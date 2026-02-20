@@ -1,0 +1,35 @@
+# Virtual environment
+venv/
+.venv/
+
+# Data files (user-specific)
+data/jarvis.db
+data/chroma_store/
+data/notes/*.md
+data/notes/*.txt
+
+# Environment config
+.env
+
+# Piper models (too large for git)
+models/*.onnx
+models/*.onnx.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
