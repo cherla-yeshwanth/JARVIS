@@ -1,0 +1,826 @@
+[
+  {
+    "name": "Jarvis — System Control",
+    "nodes": [
+      {
+        "id": "2b3ce2ce-4451-4b31-ad64-df134d9b26c9",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [240, 300],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "jarvis-system",
+          "responseMode": "responseNode",
+          "options": {}
+        }
+      },
+      {
+        "id": "e6ebda20-1dc3-4e48-b6cd-5a1581464fb2",
+        "name": "Parse Action",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [460, 300],
+        "parameters": {
+          "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst action = (body.action || '').toLowerCase();\nconst target = body.target || '';\nconst value  = body.value  || '';\n\nlet command = '';\nlet info = `action=${action}, target=${target}`;\n\nconst platform = process.platform;\n\nif (action === 'open') {\n  if (platform === 'win32')  command = `start \"\" \"${target}\"`;\n  else if (platform === 'darwin') command = `open -a \"${target}\"`;\n  else command = `xdg-open \"${target}\" &`;\n\n} else if (action === 'close') {\n  if (platform === 'win32')  command = `taskkill /f /im \"${target}.exe\"`;\n  else if (platform === 'darwin') command = `osascript -e 'quit app \"${target}\"'`;\n  else command = `pkill -f \"${target}\"`;\n\n} else if (action === 'volume') {\n  const vol = parseInt(value) || 50;\n  if (platform === 'win32')  command = `powershell -c \"(New-Object -ComObject WScript.Shell).SendKeys([char]173)\"`;  // mute toggle placeholder\n  else if (platform === 'darwin') command = `osascript -e 'set volume output volume ${vol}'`;\n  else command = `amixer sset Master ${vol}%`;\n\n} else if (action === 'screenshot') {\n  const ts = Date.now();\n  if (platform === 'win32')  command = `powershell -c \"Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen | ForEach-Object { $bitmap = New-Object System.Drawing.Bitmap($_.Bounds.Width, $_.Bounds.Height); $graphics = [System.Drawing.Graphics]::FromImage($bitmap); $graphics.CopyFromScreen($_.Bounds.Location, [System.Drawing.Point]::Empty, $_.Bounds.Size); $bitmap.Save('screenshot_${ts}.png') }\"`;\n  else if (platform === 'darwin') command = `screencapture screenshot_${ts}.png`;\n  else command = `scrot screenshot_${ts}.png`;\n\n} else if (action === 'sysinfo') {\n  if (platform === 'win32')  command = `powershell -c \"Get-ComputerInfo | Select-Object CsName, OsName, OsArchitecture, CsTotalPhysicalMemory | ConvertTo-Json\"`;\n  else if (platform === 'darwin') command = `system_profiler SPSoftwareDataType SPHardwareDataType`;\n  else command = `hostnamectl && free -h && df -h /`;\n\n} else if (action === 'battery') {\n  if (platform === 'darwin') command = `pmset -g batt`;\n  else command = `cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo 'No battery info'`;\n\n} else {\n  command = '';\n}\n\nreturn [{ json: { action, target, value, command, info } }];"
+        }
+      },
+      {
+        "id": "da7af607-f5fd-46a0-ad72-36a38424b949",
+        "name": "Has Command?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [680, 300],
+        "parameters": {
+          "conditions": {
+            "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+            "conditions": [
+              {
+                "id": "cond-1",
+                "leftValue": "={{ $json.command }}",
+                "rightValue": "",
+                "operator": { "type": "string", "operation": "notEquals" }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "3492d0d7-6c2d-4583-97df-54b262b4606d",
+        "name": "Execute Command",
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [900, 200],
+        "parameters": {
+          "command": "={{ $json.command }}"
+        }
+      },
+      {
+        "id": "5a86c765-8322-4099-ba09-79c07eee2c4f",
+        "name": "Unknown Action",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [900, 420],
+        "parameters": {
+          "mode": "manual",
+          "fields": {
+            "values": [
+              { "name": "success", "type": "booleanValue", "booleanValue": false },
+              { "name": "message", "type": "stringValue", "stringValue": "Unknown action. Supported: open, close, volume, screenshot, sysinfo, battery" }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "2ef43992-d851-4ff9-9d87-cb5f83d0ac96",
+        "name": "Format Success",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1120, 200],
+        "parameters": {
+          "jsCode": "const output = $input.first().json.stdout || '';\nconst stderr = $input.first().json.stderr || '';\nreturn [{ json: { success: true, message: 'Command executed successfully', output: output.trim(), error: stderr.trim() } }];"
+        }
+      },
+      {
+        "id": "f7f2dfa4-8283-49c9-ab0e-b77741b91f0c",
+        "name": "Respond",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [1340, 300],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json) }}",
+          "options": { "responseCode": 200 }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": { "main": [[{ "node": "Parse Action", "type": "main", "index": 0 }]] },
+      "Parse Action": { "main": [[{ "node": "Has Command?", "type": "main", "index": 0 }]] },
+      "Has Command?": {
+        "main": [
+          [{ "node": "Execute Command", "type": "main", "index": 0 }],
+          [{ "node": "Unknown Action", "type": "main", "index": 0 }]
+        ]
+      },
+      "Execute Command": { "main": [[{ "node": "Format Success", "type": "main", "index": 0 }]] },
+      "Format Success": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Unknown Action": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+    },
+    "active": true,
+    "settings": { "executionOrder": "v1" },
+    "tags": [{ "name": "jarvis" }],
+    "meta": { "description": "Handles system commands: open/close apps, volume, screenshots, system info, battery." }
+  },
+
+  {
+    "name": "Jarvis — Code Assistant",
+    "nodes": [
+      {
+        "id": "b1a3c44c-8bdb-41bd-bcd0-198696ab4ae9",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [240, 300],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "jarvis-code",
+          "responseMode": "responseNode",
+          "options": {}
+        }
+      },
+      {
+        "id": "3d009f41-3426-4107-a66c-4a34c1df68f0",
+        "name": "Build Prompt",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [460, 300],
+        "parameters": {
+          "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst task    = (body.task || 'write').toLowerCase();   // write | debug | explain | review\nconst code    = body.code    || '';\nconst request = body.request || '';\nconst lang    = body.language || 'Python';\n\nlet systemPrompt = 'You are an expert software developer. Be precise and concise.';\nlet userPrompt   = '';\n\nif (task === 'write') {\n  userPrompt = `Write ${lang} code for: ${request}\\nReturn ONLY the code with brief inline comments. No markdown fences.`;\n} else if (task === 'debug') {\n  userPrompt = `Debug this ${lang} code and explain what was wrong:\\n\\n${code}\\n\\nReturn the fixed code and a short explanation.`;\n} else if (task === 'explain') {\n  userPrompt = `Explain this ${lang} code clearly and concisely:\\n\\n${code}`;\n} else if (task === 'review') {\n  userPrompt = `Review this ${lang} code. List: bugs, performance issues, improvements:\\n\\n${code}`;\n} else {\n  userPrompt = request || `Help with this code: ${code}`;\n}\n\nconst fullPrompt = `[INST]${systemPrompt}[/INST]\\n\\nUser: ${userPrompt}\\nAssistant:`;\nreturn [{ json: { task, lang, prompt: fullPrompt, request, code } }];"
+        }
+      },
+      {
+        "id": "47fd1f51-88f1-46fe-b88f-9c9854ef3ab5",
+        "name": "Call Ollama (CodeLlama)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [680, 300],
+        "parameters": {
+          "method": "POST",
+          "url": "http://localhost:11434/api/generate",
+          "sendBody": true,
+          "bodyContentType": "json",
+          "jsonBody": "={\n  \"model\": \"codellama:7b\",\n  \"prompt\": \"{{ $json.prompt }}\",\n  \"stream\": false,\n  \"options\": {\n    \"temperature\": 0.2,\n    \"num_predict\": 2048\n  }\n}",
+          "options": { "timeout": 60000 }
+        }
+      },
+      {
+        "id": "482f654b-ad85-4128-ad32-bdc5a9fc650f",
+        "name": "Format Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 300],
+        "parameters": {
+          "jsCode": "const ollamaResp = $input.first().json;\nconst result = ollamaResp.response || '';\nreturn [{ json: { success: true, task: $('Build Prompt').first().json.task, language: $('Build Prompt').first().json.lang, result: result.trim() } }];"
+        }
+      },
+      {
+        "id": "21c3ea2e-b888-45ab-b6c3-ec6ea91e07fc",
+        "name": "Respond",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [1120, 300],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json) }}",
+          "options": { "responseCode": 200 }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": { "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]] },
+      "Build Prompt": { "main": [[{ "node": "Call Ollama (CodeLlama)", "type": "main", "index": 0 }]] },
+      "Call Ollama (CodeLlama)": { "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] },
+      "Format Response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+    },
+    "active": true,
+    "settings": { "executionOrder": "v1" },
+    "tags": [{ "name": "jarvis" }],
+    "meta": { "description": "Code assistant using CodeLlama. Tasks: write, debug, explain, review. Send {task, code, request, language}." }
+  },
+
+  {
+    "name": "Jarvis — Voice Notes",
+    "nodes": [
+      {
+        "id": "e07fa22f-55bd-4b7d-bd7a-321f7edd2628",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [240, 300],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "jarvis-notes",
+          "responseMode": "responseNode",
+          "options": {}
+        }
+      },
+      {
+        "id": "5ea10461-a4b6-4954-bf7d-10ee96eafa14",
+        "name": "Route by Operation",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [460, 300],
+        "parameters": {
+          "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst op      = (body.operation || 'save').toLowerCase();  // save | search | list | delete | export\nconst content = body.content  || '';\nconst query   = body.query    || '';\nconst noteId  = body.id       || '';\nconst tag     = body.tag      || '';\nconst notesDir = body.notesDir || '/tmp/jarvis_notes';\n\nreturn [{ json: { op, content, query, noteId, tag, notesDir } }];"
+        }
+      },
+      {
+        "id": "55becde1-640f-490a-8f06-b2f24f346fab",
+        "name": "Operation Switch",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3,
+        "position": [680, 300],
+        "parameters": {
+          "mode": "rules",
+          "rules": {
+            "values": [
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "save",   "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "save"   },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "search", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "search" },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "list",   "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "list"   },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "delete", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "delete" },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "export", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "export" }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "fb2411c5-1914-430f-87f3-38c222990400",
+        "name": "Save Note",
+        "type": "n8n-nodes-base.executeCommand",
+        "typeVersion": 1,
+        "position": [900, 80],
+        "parameters": {
+          "command": "=mkdir -p {{ $('Route by Operation').first().json.notesDir }} && NOTE_ID=$(date +%s) && echo '{{ JSON.stringify({ id: $NOTE_ID, timestamp: new Date().toISOString(), content: $(\\'Route by Operation\\').first().json.content, tag: $(\\'Route by Operation\\').first().json.tag }) }}' > {{ $('Route by Operation').first().json.notesDir }}/${NOTE_ID}.json && echo \"Saved note ${NOTE_ID}\""
+        }
+      },
+      {
+        "id": "6335229d-0bcb-41f8-93dc-c54ef1a7a2e9",
+        "name": "Save Note (Code)",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 80],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst path = require('path');\nconst data = $('Route by Operation').first().json;\nconst dir = data.notesDir;\nif (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });\nconst id = Date.now().toString();\nconst note = { id, timestamp: new Date().toISOString(), content: data.content, tag: data.tag || 'general' };\nfs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(note, null, 2));\nreturn [{ json: { success: true, message: `Note saved with ID ${id}`, note } }];"
+        }
+      },
+      {
+        "id": "fdab61a5-f777-4aac-aa69-805077370297",
+        "name": "Search Notes",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 220],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst path = require('path');\nconst data = $input.first().json;\nconst dir = data.notesDir;\nconst query = (data.query || '').toLowerCase();\nif (!fs.existsSync(dir)) return [{ json: { success: true, results: [], message: 'No notes directory found' } }];\nconst files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));\nconst results = [];\nfor (const file of files) {\n  try {\n    const note = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));\n    if (!query || (note.content || '').toLowerCase().includes(query) || (note.tag || '').toLowerCase().includes(query)) {\n      results.push(note);\n    }\n  } catch(e) {}\n}\nresults.sort((a,b) => b.timestamp.localeCompare(a.timestamp));\nreturn [{ json: { success: true, query, count: results.length, results: results.slice(0,20) } }];"
+        }
+      },
+      {
+        "id": "84e0f9ed-30b3-449a-9834-bcc29cdafc5a",
+        "name": "List Notes",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 360],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst path = require('path');\nconst data = $input.first().json;\nconst dir = data.notesDir;\nif (!fs.existsSync(dir)) return [{ json: { success: true, notes: [], message: 'No notes yet' } }];\nconst files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));\nconst notes = files.map(f => {\n  try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch(e) { return null; }\n}).filter(Boolean);\nnotes.sort((a,b) => b.timestamp.localeCompare(a.timestamp));\nreturn [{ json: { success: true, count: notes.length, notes: notes.slice(0,50) } }];"
+        }
+      },
+      {
+        "id": "40f8f4f3-3863-4ada-93e2-29ec4c00ab8e",
+        "name": "Delete Note",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 500],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst path = require('path');\nconst data = $input.first().json;\nconst filepath = path.join(data.notesDir, `${data.noteId}.json`);\nif (fs.existsSync(filepath)) {\n  fs.unlinkSync(filepath);\n  return [{ json: { success: true, message: `Note ${data.noteId} deleted` } }];\n}\nreturn [{ json: { success: false, message: `Note ${data.noteId} not found` } }];"
+        }
+      },
+      {
+        "id": "54b055e5-6077-4b64-887c-6d0455a3166d",
+        "name": "Export Notes",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 640],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst path = require('path');\nconst data = $input.first().json;\nconst dir = data.notesDir;\nif (!fs.existsSync(dir)) return [{ json: { success: false, message: 'No notes to export' } }];\nconst files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));\nconst notes = files.map(f => {\n  try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch(e) { return null; }\n}).filter(Boolean).sort((a,b) => a.timestamp.localeCompare(b.timestamp));\nconst md = notes.map(n => `## [${n.tag || 'general'}] ${n.timestamp}\\n\\n${n.content}\\n`).join('\\n---\\n\\n');\nconst exportPath = path.join(dir, 'export.md');\nfs.writeFileSync(exportPath, `# Jarvis Notes Export\\n\\nExported: ${new Date().toISOString()}\\nTotal: ${notes.length} notes\\n\\n---\\n\\n${md}`);\nreturn [{ json: { success: true, message: `Exported ${notes.length} notes`, path: exportPath, markdown: md } }];"
+        }
+      },
+      {
+        "id": "105e7f66-bff3-45e4-9d57-84c029e2762e",
+        "name": "Respond",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [1140, 360],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json) }}",
+          "options": { "responseCode": 200 }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": { "main": [[{ "node": "Route by Operation", "type": "main", "index": 0 }]] },
+      "Route by Operation": { "main": [[{ "node": "Operation Switch", "type": "main", "index": 0 }]] },
+      "Operation Switch": {
+        "main": [
+          [{ "node": "Save Note (Code)",  "type": "main", "index": 0 }],
+          [{ "node": "Search Notes",       "type": "main", "index": 0 }],
+          [{ "node": "List Notes",         "type": "main", "index": 0 }],
+          [{ "node": "Delete Note",        "type": "main", "index": 0 }],
+          [{ "node": "Export Notes",       "type": "main", "index": 0 }]
+        ]
+      },
+      "Save Note (Code)": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Search Notes":     { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "List Notes":       { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Delete Note":      { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Export Notes":     { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+    },
+    "active": true,
+    "settings": { "executionOrder": "v1" },
+    "tags": [{ "name": "jarvis" }],
+    "meta": { "description": "Voice notes: save, search, list, delete, export to markdown. Send {operation, content, query, id, tag, notesDir}." }
+  },
+
+  {
+    "name": "Jarvis — Utilities",
+    "nodes": [
+      {
+        "id": "bdc59807-7355-4311-862f-06fdabb2d29b",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [240, 300],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "jarvis-utilities",
+          "responseMode": "responseNode",
+          "options": {}
+        }
+      },
+      {
+        "id": "8de0ff82-90df-4968-87d1-6d8b208ab8d8",
+        "name": "Route Utility",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [460, 300],
+        "parameters": {
+          "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst util = (body.utility || '').toLowerCase(); // calculator | converter | password | text\nreturn [{ json: { ...body, utility: util } }];"
+        }
+      },
+      {
+        "id": "ee0f87d9-69c1-4c69-aab0-df2d5b18ae69",
+        "name": "Utility Switch",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3,
+        "position": [680, 300],
+        "parameters": {
+          "mode": "rules",
+          "rules": {
+            "values": [
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.utility }}", "rightValue": "calculator", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "calculator" },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.utility }}", "rightValue": "converter",  "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "converter"  },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.utility }}", "rightValue": "password",   "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "password"   },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.utility }}", "rightValue": "text",       "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "text"       }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "3d8f6816-5279-4a01-b176-5a896f5c0213",
+        "name": "Calculator",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 80],
+        "parameters": {
+          "jsCode": "const expr = ($input.first().json.expression || '').replace(/[^0-9+\\-*/().% ]/g, '');\nlet result, error;\ntry {\n  result = Function('\"use strict\"; return (' + expr + ')')();\n} catch(e) { error = e.message; }\nreturn [{ json: { success: !error, expression: expr, result: result !== undefined ? result : null, error: error || null } }];"
+        }
+      },
+      {
+        "id": "d6fbffca-3196-4d6a-8bb0-495dad69adbf",
+        "name": "Converter",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 220],
+        "parameters": {
+          "jsCode": "const body = $input.first().json;\nconst value = parseFloat(body.value);\nconst from  = (body.from  || '').toLowerCase();\nconst to    = (body.to    || '').toLowerCase();\n\nconst conversions = {\n  // Temperature\n  'celsius_fahrenheit':   v => v * 9/5 + 32,\n  'fahrenheit_celsius':   v => (v - 32) * 5/9,\n  'celsius_kelvin':       v => v + 273.15,\n  'kelvin_celsius':       v => v - 273.15,\n  // Length\n  'km_miles':    v => v * 0.621371,\n  'miles_km':    v => v * 1.60934,\n  'meters_feet': v => v * 3.28084,\n  'feet_meters': v => v * 0.3048,\n  'cm_inches':   v => v * 0.393701,\n  'inches_cm':   v => v * 2.54,\n  // Weight\n  'kg_lbs':  v => v * 2.20462,\n  'lbs_kg':  v => v * 0.453592,\n  'grams_oz':v => v * 0.035274,\n  'oz_grams':v => v * 28.3495,\n  // Data\n  'gb_mb':   v => v * 1024,\n  'mb_gb':   v => v / 1024,\n  'tb_gb':   v => v * 1024,\n  'gb_tb':   v => v / 1024,\n};\n\nconst key = `${from}_${to}`;\nconst fn  = conversions[key];\nif (!fn) return [{ json: { success: false, message: `Unsupported conversion: ${from} to ${to}`, supported: Object.keys(conversions) } }];\n\nconst result = fn(value);\nreturn [{ json: { success: true, input: `${value} ${from}`, result: +result.toFixed(6), unit: to } }];"
+        }
+      },
+      {
+        "id": "d95702d5-fa64-45c3-b1cb-2e4c16f92b89",
+        "name": "Password Generator",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 360],
+        "parameters": {
+          "jsCode": "const body = $input.first().json;\nconst length     = parseInt(body.length)  || 16;\nconst count      = parseInt(body.count)   || 1;\nconst useUpper   = body.uppercase  !== false;\nconst useLower   = body.lowercase  !== false;\nconst useNumbers = body.numbers    !== false;\nconst useSymbols = body.symbols    !== false;\n\nlet charset = '';\nif (useLower)   charset += 'abcdefghijklmnopqrstuvwxyz';\nif (useUpper)   charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';\nif (useNumbers) charset += '0123456789';\nif (useSymbols) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';\nif (!charset)   charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';\n\nconst { randomBytes } = require('crypto');\nconst passwords = [];\nfor (let i = 0; i < count; i++) {\n  let pw = '';\n  const bytes = randomBytes(length * 2);\n  for (let j = 0; j < length; j++) {\n    pw += charset[bytes[j] % charset.length];\n  }\n  passwords.push(pw);\n}\n\nreturn [{ json: { success: true, passwords, length, charset_size: charset.length, strength: length >= 16 && useSymbols ? 'Strong' : length >= 12 ? 'Medium' : 'Weak' } }];"
+        }
+      },
+      {
+        "id": "2f1e90b8-3d10-4322-a0b1-ebc4cb377911",
+        "name": "Text Tools",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 500],
+        "parameters": {
+          "jsCode": "const body = $input.first().json;\nconst text  = body.text  || '';\nconst op    = (body.operation || 'wordcount').toLowerCase();\n// Operations: wordcount | uppercase | lowercase | titlecase | reverse | base64encode | base64decode | slugify | trim | countchars\n\nlet result;\nif      (op === 'wordcount')     result = { words: text.trim().split(/\\s+/).filter(Boolean).length, chars: text.length, lines: text.split('\\n').length };\nelse if (op === 'uppercase')     result = text.toUpperCase();\nelse if (op === 'lowercase')     result = text.toLowerCase();\nelse if (op === 'titlecase')     result = text.replace(/\\b\\w/g, c => c.toUpperCase());\nelse if (op === 'reverse')       result = text.split('').reverse().join('');\nelse if (op === 'base64encode')  result = Buffer.from(text).toString('base64');\nelse if (op === 'base64decode')  result = Buffer.from(text, 'base64').toString('utf8');\nelse if (op === 'slugify')       result = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');\nelse if (op === 'trim')          result = text.trim().replace(/\\s+/g, ' ');\nelse if (op === 'countchars')    result = { total: text.length, noSpaces: text.replace(/\\s/g,'').length, letters: (text.match(/[a-zA-Z]/g)||[]).length, digits: (text.match(/[0-9]/g)||[]).length };\nelse result = `Unknown operation. Supported: wordcount, uppercase, lowercase, titlecase, reverse, base64encode, base64decode, slugify, trim, countchars`;\n\nreturn [{ json: { success: true, operation: op, result } }];"
+        }
+      },
+      {
+        "id": "c8e1e4ab-d737-4877-a52d-1b272265e0d6",
+        "name": "Respond",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [1140, 300],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json) }}",
+          "options": { "responseCode": 200 }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": { "main": [[{ "node": "Route Utility", "type": "main", "index": 0 }]] },
+      "Route Utility": { "main": [[{ "node": "Utility Switch", "type": "main", "index": 0 }]] },
+      "Utility Switch": {
+        "main": [
+          [{ "node": "Calculator",         "type": "main", "index": 0 }],
+          [{ "node": "Converter",          "type": "main", "index": 0 }],
+          [{ "node": "Password Generator", "type": "main", "index": 0 }],
+          [{ "node": "Text Tools",         "type": "main", "index": 0 }]
+        ]
+      },
+      "Calculator":         { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Converter":          { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Password Generator": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Text Tools":         { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+    },
+    "active": true,
+    "settings": { "executionOrder": "v1" },
+    "tags": [{ "name": "jarvis" }],
+    "meta": { "description": "Utilities: calculator, unit converter, password generator, text tools. Send {utility, ...options}." }
+  },
+
+  {
+    "name": "Jarvis — Web Search",
+    "nodes": [
+      {
+        "id": "015cf2be-8540-4d83-90a8-1258dd2174d6",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [240, 300],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "jarvis-search",
+          "responseMode": "responseNode",
+          "options": {}
+        }
+      },
+      {
+        "id": "2443a3ec-f5cc-4c5a-b38c-61f11956c132",
+        "name": "Extract Query",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [460, 300],
+        "parameters": {
+          "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst query   = body.query   || '';\nconst num     = parseInt(body.results) || 5;\nconst summarize = body.summarize !== false;\nreturn [{ json: { query, num, summarize } }];"
+        }
+      },
+      {
+        "id": "ca66a10d-d4dd-4578-bdce-697297600cfa",
+        "name": "Serper Search",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [680, 300],
+        "parameters": {
+          "method": "POST",
+          "url": "https://google.serper.dev/search",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              { "name": "X-API-KEY", "value": "YOUR_SERPER_API_KEY" },
+              { "name": "Content-Type", "value": "application/json" }
+            ]
+          },
+          "sendBody": true,
+          "bodyContentType": "json",
+          "jsonBody": "={\n  \"q\": \"{{ $json.query }}\",\n  \"num\": {{ $json.num }}\n}",
+          "options": { "timeout": 10000 }
+        }
+      },
+      {
+        "id": "187651e2-4be9-4eb4-858a-a4c4650e1389",
+        "name": "Format Results",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 300],
+        "parameters": {
+          "jsCode": "const data  = $input.first().json;\nconst query = $('Extract Query').first().json.query;\nconst organic = data.organic || [];\nconst answerBox = data.answerBox;\n\nconst formatted = organic.slice(0, 5).map((r, i) => ({\n  rank: i + 1,\n  title: r.title,\n  link: r.link,\n  snippet: r.snippet || ''\n}));\n\nconst contextForOllama = [\n  answerBox ? `Direct Answer: ${answerBox.answer || answerBox.snippet || ''}` : '',\n  ...organic.slice(0, 5).map(r => `${r.title}: ${r.snippet || ''}`)\n].filter(Boolean).join('\\n\\n');\n\nreturn [{ json: { query, results: formatted, contextForOllama, hasAnswerBox: !!answerBox } }];"
+        }
+      },
+      {
+        "id": "edc65807-4eef-4c4e-b8a2-25d7e7c6e7b9",
+        "name": "Summarize with Ollama",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [1120, 300],
+        "parameters": {
+          "method": "POST",
+          "url": "http://localhost:11434/api/generate",
+          "sendBody": true,
+          "bodyContentType": "json",
+          "jsonBody": "={\n  \"model\": \"llama3.1:8b\",\n  \"prompt\": \"Based on these search results, answer this query concisely:\\n\\nQuery: {{ $json.query }}\\n\\nResults:\\n{{ $json.contextForOllama }}\\n\\nProvide a clear, direct summary in 2-4 sentences.\",\n  \"stream\": false,\n  \"options\": { \"temperature\": 0.3, \"num_predict\": 512 }\n}",
+          "options": { "timeout": 30000 }
+        }
+      },
+      {
+        "id": "0d58050c-3f0b-4246-86da-09128ab8b7bd",
+        "name": "Build Final Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1340, 300],
+        "parameters": {
+          "jsCode": "const summary = $input.first().json.response || '';\nconst searchData = $('Format Results').first().json;\nreturn [{ json: { success: true, query: searchData.query, summary: summary.trim(), sources: searchData.results } }];"
+        }
+      },
+      {
+        "id": "b20d0f76-9b2c-46d8-981f-c96c3fae0877",
+        "name": "Respond",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [1560, 300],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json) }}",
+          "options": { "responseCode": 200 }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": { "main": [[{ "node": "Extract Query", "type": "main", "index": 0 }]] },
+      "Extract Query": { "main": [[{ "node": "Serper Search", "type": "main", "index": 0 }]] },
+      "Serper Search": { "main": [[{ "node": "Format Results", "type": "main", "index": 0 }]] },
+      "Format Results": { "main": [[{ "node": "Summarize with Ollama", "type": "main", "index": 0 }]] },
+      "Summarize with Ollama": { "main": [[{ "node": "Build Final Response", "type": "main", "index": 0 }]] },
+      "Build Final Response": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+    },
+    "active": true,
+    "settings": { "executionOrder": "v1" },
+    "tags": [{ "name": "jarvis" }],
+    "meta": { "description": "Web search via Serper API + Ollama summarization. Replace YOUR_SERPER_API_KEY. Send {query, results, summarize}." }
+  },
+
+  {
+    "name": "Jarvis — Memory",
+    "nodes": [
+      {
+        "id": "26f558ff-e558-42f5-93a3-363137fca7ad",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [240, 300],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "jarvis-memory",
+          "responseMode": "responseNode",
+          "options": {}
+        }
+      },
+      {
+        "id": "bb22bb42-6706-48e7-9fba-0f6715cd3296",
+        "name": "Parse Request",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [460, 300],
+        "parameters": {
+          "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst op       = (body.operation || 'save').toLowerCase(); // save | retrieve | list | delete | export | privacy\nconst key      = body.key      || '';\nconst value    = body.value    || '';\nconst category = body.category || 'general';\nconst query    = body.query    || '';\nconst privacy  = body.privacy  || false;  // if true, skip persistent storage\nconst memFile  = body.memFile  || '/tmp/jarvis_memory.json';\nreturn [{ json: { op, key, value, category, query, privacy, memFile } }];"
+        }
+      },
+      {
+        "id": "cf207bbe-7c5b-49ff-a6ec-6ac37e843058",
+        "name": "Memory Switch",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3,
+        "position": [680, 300],
+        "parameters": {
+          "mode": "rules",
+          "rules": {
+            "values": [
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "save",     "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "save"     },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "retrieve", "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "retrieve" },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "list",     "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "list"     },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "delete",   "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "delete"   },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "export",   "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "export"   },
+              { "conditions": { "conditions": [{ "leftValue": "={{ $json.op }}", "rightValue": "privacy",  "operator": { "type": "string", "operation": "equals" } }], "combinator": "and" }, "renameOutput": true, "outputKey": "privacy"  }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "1651fb5a-82fc-4b00-8009-5ae7a607bb04",
+        "name": "Save Fact",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 60],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst data = $input.first().json;\nif (data.privacy) return [{ json: { success: true, message: 'Privacy mode: fact not stored', privacy: true } }];\nlet mem = {};\nif (fs.existsSync(data.memFile)) {\n  try { mem = JSON.parse(fs.readFileSync(data.memFile, 'utf8')); } catch(e) {}\n}\nif (!mem[data.category]) mem[data.category] = {};\nmem[data.category][data.key] = { value: data.value, updatedAt: new Date().toISOString() };\nfs.writeFileSync(data.memFile, JSON.stringify(mem, null, 2));\nreturn [{ json: { success: true, message: `Saved: ${data.category}.${data.key}`, key: data.key, value: data.value } }];"
+        }
+      },
+      {
+        "id": "d8b4821a-e503-4c88-9ba6-f05c5d6032e0",
+        "name": "Retrieve Fact",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 200],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst data = $input.first().json;\nif (!fs.existsSync(data.memFile)) return [{ json: { success: false, message: 'No memory file found' } }];\nconst mem = JSON.parse(fs.readFileSync(data.memFile, 'utf8'));\n\nif (data.key) {\n  // Direct lookup\n  const cat = mem[data.category] || {};\n  const fact = cat[data.key];\n  if (fact) return [{ json: { success: true, key: data.key, value: fact.value, updatedAt: fact.updatedAt } }];\n  return [{ json: { success: false, message: `No fact found for ${data.category}.${data.key}` } }];\n}\n\nif (data.query) {\n  // Fuzzy search\n  const q = data.query.toLowerCase();\n  const hits = [];\n  for (const [cat, facts] of Object.entries(mem)) {\n    for (const [k, v] of Object.entries(facts)) {\n      if (k.toLowerCase().includes(q) || (typeof v.value === 'string' && v.value.toLowerCase().includes(q))) {\n        hits.push({ category: cat, key: k, value: v.value, updatedAt: v.updatedAt });\n      }\n    }\n  }\n  return [{ json: { success: true, query: data.query, count: hits.length, results: hits } }];\n}\n\nreturn [{ json: { success: false, message: 'Provide key or query' } }];"
+        }
+      },
+      {
+        "id": "3a21c55c-4816-4ec2-b1a6-353b9e3de524",
+        "name": "List Facts",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 340],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst data = $input.first().json;\nif (!fs.existsSync(data.memFile)) return [{ json: { success: true, memory: {}, count: 0 } }];\nconst mem = JSON.parse(fs.readFileSync(data.memFile, 'utf8'));\nlet count = 0;\nfor (const cat of Object.values(mem)) count += Object.keys(cat).length;\nreturn [{ json: { success: true, memory: mem, count } }];"
+        }
+      },
+      {
+        "id": "d59342bd-ef7a-4903-a996-dbdd27b3d767",
+        "name": "Delete Fact",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 480],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst data = $input.first().json;\nif (!fs.existsSync(data.memFile)) return [{ json: { success: false, message: 'No memory file found' } }];\nconst mem = JSON.parse(fs.readFileSync(data.memFile, 'utf8'));\nif (mem[data.category] && mem[data.category][data.key]) {\n  delete mem[data.category][data.key];\n  if (Object.keys(mem[data.category]).length === 0) delete mem[data.category];\n  fs.writeFileSync(data.memFile, JSON.stringify(mem, null, 2));\n  return [{ json: { success: true, message: `Deleted ${data.category}.${data.key}` } }];\n}\nreturn [{ json: { success: false, message: `Fact not found: ${data.category}.${data.key}` } }];"
+        }
+      },
+      {
+        "id": "879b9199-1c17-4512-86a9-14b9d3191255",
+        "name": "Export Memory",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 620],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst path = require('path');\nconst data = $input.first().json;\nif (!fs.existsSync(data.memFile)) return [{ json: { success: false, message: 'No memory to export' } }];\nconst mem = JSON.parse(fs.readFileSync(data.memFile, 'utf8'));\nconst lines = [`# Jarvis Memory Export`, `Exported: ${new Date().toISOString()}`, ''];\nfor (const [cat, facts] of Object.entries(mem)) {\n  lines.push(`## ${cat}`);\n  for (const [k, v] of Object.entries(facts)) {\n    lines.push(`- **${k}**: ${v.value}  _(${v.updatedAt})_`);\n  }\n  lines.push('');\n}\nconst exportPath = path.join(path.dirname(data.memFile), 'memory_export.md');\nfs.writeFileSync(exportPath, lines.join('\\n'));\nreturn [{ json: { success: true, path: exportPath, markdown: lines.join('\\n') } }];"
+        }
+      },
+      {
+        "id": "4cc4c9c2-9155-4683-9f38-8fd646fed4b9",
+        "name": "Privacy Mode",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 760],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst data = $input.first().json;\nconst action = (data.value || 'status').toLowerCase(); // clear | status\nif (action === 'clear') {\n  if (fs.existsSync(data.memFile)) fs.unlinkSync(data.memFile);\n  return [{ json: { success: true, message: 'Memory cleared. Privacy mode active.' } }];\n}\nconst exists = fs.existsSync(data.memFile);\nreturn [{ json: { success: true, memoryFileExists: exists, message: exists ? 'Memory file exists. Use action=clear to wipe.' : 'No memory file — privacy mode is clean.' } }];"
+        }
+      },
+      {
+        "id": "71d76a59-ca49-466b-808d-79dfe75d22e1",
+        "name": "Respond",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [1140, 400],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json) }}",
+          "options": { "responseCode": 200 }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": { "main": [[{ "node": "Parse Request", "type": "main", "index": 0 }]] },
+      "Parse Request": { "main": [[{ "node": "Memory Switch", "type": "main", "index": 0 }]] },
+      "Memory Switch": {
+        "main": [
+          [{ "node": "Save Fact",    "type": "main", "index": 0 }],
+          [{ "node": "Retrieve Fact","type": "main", "index": 0 }],
+          [{ "node": "List Facts",   "type": "main", "index": 0 }],
+          [{ "node": "Delete Fact",  "type": "main", "index": 0 }],
+          [{ "node": "Export Memory","type": "main", "index": 0 }],
+          [{ "node": "Privacy Mode", "type": "main", "index": 0 }]
+        ]
+      },
+      "Save Fact":     { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Retrieve Fact": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "List Facts":    { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Delete Fact":   { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Export Memory": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] },
+      "Privacy Mode":  { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+    },
+    "active": true,
+    "settings": { "executionOrder": "v1" },
+    "tags": [{ "name": "jarvis" }],
+    "meta": { "description": "Memory: save/retrieve facts by category+key, fuzzy search, delete, export to markdown, privacy mode (clear). Send {operation, key, value, category, query, privacy}." }
+  },
+
+  {
+    "name": "Jarvis — Proactive Engine",
+    "nodes": [
+      {
+        "id": "b0591678-8943-4d34-86f0-4e405c72a114",
+        "name": "Every 5 Minutes",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1,
+        "position": [240, 200],
+        "parameters": {
+          "rule": {
+            "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+          }
+        }
+      },
+      {
+        "id": "ebd5c382-1e6d-43a5-956e-81407659ab84",
+        "name": "Daily 8AM Brief",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1,
+        "position": [240, 400],
+        "parameters": {
+          "rule": {
+            "interval": [{ "field": "cronExpression", "expression": "0 8 * * *" }]
+          }
+        }
+      },
+      {
+        "id": "d9448c42-e61c-4749-8523-ed962ec3260f",
+        "name": "Check Patterns",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [480, 200],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst now = new Date();\nconst hour = now.getHours();\nconst dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });\n\n// Load memory file to detect patterns\nconst memFile = '/tmp/jarvis_memory.json';\nlet mem = {};\nif (fs.existsSync(memFile)) {\n  try { mem = JSON.parse(fs.readFileSync(memFile, 'utf8')); } catch(e) {}\n}\n\nconst reminders = mem.reminders || {};\nconst triggered = [];\n\nfor (const [key, r] of Object.entries(reminders)) {\n  const reminderTime = new Date(r.value);\n  const diffMs = Math.abs(now - reminderTime);\n  // Trigger if within 5-minute window and not yet fired\n  if (diffMs <= 5 * 60 * 1000 && !r.fired) {\n    triggered.push({ key, message: key, time: r.value });\n    // Mark as fired\n    mem.reminders[key].fired = true;\n  }\n}\n\nif (Object.keys(reminders).length > 0) {\n  fs.writeFileSync(memFile, JSON.stringify(mem, null, 2));\n}\n\nconst patternFile = '/tmp/jarvis_patterns.json';\nlet patterns = {};\nif (fs.existsSync(patternFile)) {\n  try { patterns = JSON.parse(fs.readFileSync(patternFile, 'utf8')); } catch(e) {}\n}\n\n// Detect: task count spikes (more than 10 tasks in last hour)\nconst recentTasks = (patterns.hourly || {})[hour] || 0;\nconst insights = [];\nif (recentTasks > 10) insights.push(`High activity detected this hour (${recentTasks} tasks). Taking breaks helps focus.`);\n\nreturn [{ json: { hour, dayOfWeek, triggeredReminders: triggered, insights, hasAlerts: triggered.length > 0 || insights.length > 0 } }];"
+        }
+      },
+      {
+        "id": "51e6e349-d3be-4a1c-a2db-c808161d02d9",
+        "name": "Has Alerts?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [700, 200],
+        "parameters": {
+          "conditions": {
+            "conditions": [{ "id": "c1", "leftValue": "={{ $json.hasAlerts }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "218913ec-fef3-4315-95c0-299abe001a68",
+        "name": "Send Alert to Jarvis",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [920, 120],
+        "parameters": {
+          "method": "POST",
+          "url": "http://localhost:8765/proactive",
+          "sendBody": true,
+          "bodyContentType": "json",
+          "jsonBody": "={\n  \"type\": \"alert\",\n  \"reminders\": {{ JSON.stringify($json.triggeredReminders) }},\n  \"insights\": {{ JSON.stringify($json.insights) }}\n}",
+          "options": { "timeout": 5000, "allowUnauthorizedCerts": true }
+        }
+      },
+      {
+        "id": "bab3ed6a-3a8f-41df-8fec-f755a390de6a",
+        "name": "Log Pattern",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [700, 340],
+        "parameters": {
+          "jsCode": "// Track task frequency by hour for pattern detection\nconst fs = require('fs');\nconst hour = new Date().getHours();\nconst patternFile = '/tmp/jarvis_patterns.json';\nlet patterns = { hourly: {}, daily: {}, weekday: {} };\nif (fs.existsSync(patternFile)) {\n  try { patterns = JSON.parse(fs.readFileSync(patternFile, 'utf8')); } catch(e) {}\n}\nif (!patterns.hourly) patterns.hourly = {};\npatterns.hourly[hour] = (patterns.hourly[hour] || 0) + 1;\npatterns.lastCheck = new Date().toISOString();\nfs.writeFileSync(patternFile, JSON.stringify(patterns, null, 2));\nreturn [{ json: { success: true, message: 'Pattern logged', hour, count: patterns.hourly[hour] } }];"
+        }
+      },
+      {
+        "id": "50b4c047-78f6-4c9b-8c4f-1d58c755a473",
+        "name": "Morning Brief",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [480, 400],
+        "parameters": {
+          "jsCode": "const fs = require('fs');\nconst now = new Date();\nconst dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });\nconst dateStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });\n\n// Load memory for personalization\nconst memFile = '/tmp/jarvis_memory.json';\nlet mem = {};\nif (fs.existsSync(memFile)) {\n  try { mem = JSON.parse(fs.readFileSync(memFile, 'utf8')); } catch(e) {}\n}\n\nconst name = (mem.personal && mem.personal.name) ? mem.personal.name.value : 'there';\nconst patternFile = '/tmp/jarvis_patterns.json';\nlet patterns = {};\nif (fs.existsSync(patternFile)) {\n  try { patterns = JSON.parse(fs.readFileSync(patternFile, 'utf8')); } catch(e) {}\n}\n\n// Find most common morning task\nconst morningHours = [8, 9, 10];\nlet topTask = 'tasks';\nlet topCount = 0;\nfor (const h of morningHours) {\n  const c = (patterns.hourly || {})[h] || 0;\n  if (c > topCount) { topCount = c; }\n}\n\nconst brief = `Good morning, ${name}. Today is ${dayOfWeek}, ${dateStr}. You typically have ${topCount} activities in the morning. Have a productive day!`;\n\nreturn [{ json: { brief, name, dayOfWeek, dateStr } }];"
+        }
+      },
+      {
+        "id": "7500796c-4c99-43d3-bdc8-8194999db19e",
+        "name": "Speak Morning Brief",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [700, 400],
+        "parameters": {
+          "method": "POST",
+          "url": "http://localhost:8765/speak",
+          "sendBody": true,
+          "bodyContentType": "json",
+          "jsonBody": "={\n  \"text\": \"{{ $json.brief }}\",\n  \"type\": \"morning_brief\"\n}",
+          "options": { "timeout": 10000 }
+        }
+      }
+    ],
+    "connections": {
+      "Every 5 Minutes": { "main": [[{ "node": "Check Patterns", "type": "main", "index": 0 }]] },
+      "Check Patterns": { "main": [[{ "node": "Has Alerts?", "type": "main", "index": 0 }], [{ "node": "Log Pattern", "type": "main", "index": 0 }]] },
+      "Has Alerts?": { "main": [[{ "node": "Send Alert to Jarvis", "type": "main", "index": 0 }], []] },
+      "Daily 8AM Brief": { "main": [[{ "node": "Morning Brief", "type": "main", "index": 0 }]] },
+      "Morning Brief": { "main": [[{ "node": "Speak Morning Brief", "type": "main", "index": 0 }]] }
+    },
+    "active": false,
+    "settings": { "executionOrder": "v1" },
+    "tags": [{ "name": "jarvis" }],
+    "meta": { "description": "Proactive engine: runs every 5 mins to check reminders and patterns. Sends morning brief at 8am. Set active=true when main Jarvis service is running. Requires a local /speak endpoint." }
+  }
+]

@@ -20,6 +20,9 @@ from brain import Brain
 from memory import Memory
 from executor import Executor
 from tts import TextToSpeech
+
+# Import speech-to-speech functions
+from speech_assistant import recognize_speech, speak_text
 from proactive import ProactiveEngine
 from safety import get_safety_summary
 
@@ -227,6 +230,7 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description=f'{ASSISTANT_NAME} v1.0 — Personal AI Assistant')
     parser.add_argument('--voice', action='store_true', help='Enable voice mode (hotkey-activated)')
+    parser.add_argument('--speech-assistant', action='store_true', help='Enable fully hands-free speech-to-speech mode')
     parser.add_argument('--no-proactive', action='store_true', help='Disable proactive engine')
     args = parser.parse_args()
 
@@ -257,10 +261,30 @@ def main():
 
     # ─── Run ─────────────────────────────────────────────
     try:
-        if args.voice:
-            run_voice_mode(brain, memory, executor, tts, proactive)
-        else:
-            run_text_mode(brain, memory, executor, tts, proactive)
+        # Always run speech-to-speech mode by default
+        print(f"\n[{ASSISTANT_NAME}] Speech-to-Speech mode active. Say 'quit' to exit.")
+        speak_text(f"{ASSISTANT_NAME} is ready. How can I help you?")
+        while True:
+            text = recognize_speech()
+            if not text:
+                continue
+            if text.lower() in ("quit", "exit", "bye", "goodbye"):
+                speak_text("Goodbye! Have a great day.")
+                break
+            # Route through JARVIS pipeline for a real response
+            context = memory.get_context(text)
+            routing = brain.route(text, context)
+            print(f"[BRAIN] Intent: {routing['intent'].value} | Model: {routing['model']}")
+            response = executor.execute(routing)
+            print(f"[{ASSISTANT_NAME}]: {response}")
+            speak_text(response)
+            memory.add_exchange(
+                session_id=SESSION_ID,
+                user_input=text,
+                response=response,
+                intent=routing['intent'].value,
+                model_used=routing['model'],
+            )
     except Exception as e:
         print(f"[FATAL] {e}")
     finally:

@@ -38,10 +38,17 @@ If explaining code, be clear and educational."""
                 },
                 timeout=OLLAMA_TIMEOUT,
             )
-            if resp.status_code == 200:
-                return resp.json().get('response', '').strip()
+            try:
+                data = resp.json()
+            except Exception as e:
+                return f"Ollama API returned invalid JSON: {e}\nRaw response: {resp.text}"
+
+            if resp.status_code == 200 and "error" not in data:
+                return data.get("response", "").strip()
+            elif "error" in data:
+                return f"Ollama error: {data['error']}"
             else:
-                return f"Error generating code: status {resp.status_code}"
+                return f"Error generating code: status {resp.status_code}, response: {resp.text}"
         except requests.Timeout:
             return "Code generation timed out. Try a simpler request."
         except requests.ConnectionError:

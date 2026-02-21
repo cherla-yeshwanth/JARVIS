@@ -130,17 +130,44 @@ class UtilityHandler:
             return "Format: 'convert 100 km to miles'. I support length, weight, temperature, volume, speed, and data units."
 
         value = float(match.group(1))
-        from_unit = match.group(2).lower().strip('s')  # normalize plural
-        to_unit = match.group(3).lower().strip('s')
+        from_unit_raw = match.group(2).lower()
+        to_unit_raw = match.group(3).lower()
+
+        # Only strip 's' for non-temperature units
+        temp_units = ['celsius', 'fahrenheit', 'centigrade', 'kelvin']
+        if from_unit_raw not in temp_units:
+            from_unit = from_unit_raw.rstrip('s')
+        else:
+            from_unit = from_unit_raw
+        if to_unit_raw not in temp_units:
+            to_unit = to_unit_raw.rstrip('s')
+        else:
+            to_unit = to_unit_raw
+
+        # Normalize common synonyms
+        synonyms = {
+            "kilometer": "km", "kilometre": "km", "kilometers": "km", "kilometres": "km",
+            "mile": "miles", "miles": "miles",
+            "celsius": "c", "centigrade": "c", "fahrenheit": "f", "kelvin": "k",
+            "kg": "kg", "kilogram": "kg", "kilograms": "kg",
+            "lb": "lbs", "lbs": "lbs", "pound": "lbs", "pounds": "lbs"
+        }
+        from_unit = synonyms.get(from_unit, from_unit)
+        to_unit = synonyms.get(to_unit, to_unit)
+
+        # Accept more variations for temperature units
+        c_variants = ('c', '°c', 'celsius', 'centigrade')
+        f_variants = ('f', '°f', 'fahrenheit')
+        k_variants = ('k', 'kelvin')
 
         # Temperature special case
-        if from_unit in ('c', '°c', 'celsius') and to_unit in ('f', '°f', 'fahrenheit'):
+        if from_unit in c_variants and to_unit in f_variants:
             result = (value * 9 / 5) + 32
             return f"🌡️ {value}°C = {result:.1f}°F"
-        if from_unit in ('f', '°f', 'fahrenheit') and to_unit in ('c', '°c', 'celsius'):
+        if from_unit in f_variants and to_unit in c_variants:
             result = (value - 32) * 5 / 9
             return f"🌡️ {value}°F = {result:.1f}°C"
-        if from_unit in ('c', '°c', 'celsius') and to_unit in ('k', 'kelvin'):
+        if from_unit in c_variants and to_unit in k_variants:
             result = value + 273.15
             return f"🌡️ {value}°C = {result:.1f}K"
 

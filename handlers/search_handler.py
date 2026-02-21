@@ -61,7 +61,7 @@ class SearchHandler:
             results = self._search_web(user_input)
 
         if not results:
-            return f"I couldn't find any results for '{user_input}'. Please check your internet connection."
+            return f"No search results found for '{user_input}'. This may be due to query phrasing, search engine limitations, or a temporary block. Try a different query or check for rate limits."
 
         # Format results for LLM summarization
         formatted = []
