@@ -13,12 +13,19 @@ class SearchHandler:
         self.brain = brain
         self.available = False
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             self.ddgs = DDGS
             self.available = True
             print("[SEARCH] DuckDuckGo search ready.")
         except ImportError:
-            print("[SEARCH] duckduckgo-search not installed. Search disabled.")
+            try:
+                from duckduckgo_search import DDGS
+                self.ddgs = DDGS
+                self.available = True
+                print("[SEARCH] DuckDuckGo search ready (legacy package).")
+            except ImportError:
+                self.ddgs = None
+                print("[SEARCH] WARNING: No search package found. Run: pip install ddgs")
 
     def _search_web(self, query: str, max_results: int = 5) -> list[dict]:
         """Search DuckDuckGo and return results."""
@@ -36,45 +43,49 @@ class SearchHandler:
         """Search DuckDuckGo News."""
         if not self.available:
             return []
-        try:
-            with self.ddgs() as ddgs:
-                results = list(ddgs.news(query, max_results=max_results))
-                return results
-        except Exception as e:
-            print(f"[SEARCH] News error: {e}")
-            return []
+            try:
+                with self.ddgs() as ddgs:
+                    results = list(ddgs.news(query, max_results=max_results))
+                    return results
+            except Exception as e:
+                print(f"[SEARCH] News error: {e}")
+                return []
 
     def handle(self, user_input: str, context: str = '') -> str:
         """Search the web and summarize results."""
+        # Input validation
+        if not isinstance(user_input, str) or not user_input.strip():
+            return "Sorry, I didn't receive any input."
         if not self.available:
             return "Web search is not available. Install duckduckgo-search package."
 
-        # Determine if it's a news query
-        lower = user_input.lower()
-        is_news = any(w in lower for w in ['news', 'latest', 'recent', 'today', 'current'])
+        try:
+            # Determine if it's a news query
+            lower = user_input.lower()
+            is_news = any(w in lower for w in ['news', 'latest', 'recent', 'today', 'current'])
 
-        print(f"[SEARCH] Searching: {user_input}")
+            print(f"[SEARCH] Searching: {user_input}")
 
-        if is_news:
-            results = self._search_news(user_input)
-        else:
-            results = self._search_web(user_input)
+            if is_news:
+                results = self._search_news(user_input)
+            else:
+                results = self._search_web(user_input)
 
-        if not results:
-            return f"No search results found for '{user_input}'. This may be due to query phrasing, search engine limitations, or a temporary block. Try a different query or check for rate limits."
+            if not results:
+                return f"No search results found for '{user_input}'. This may be due to query phrasing, search engine limitations, or a temporary block. Try a different query or check for rate limits."
 
-        # Format results for LLM summarization
-        formatted = []
-        for i, r in enumerate(results[:5], 1):
-            title = r.get('title', 'No title')
-            body = r.get('body', r.get('description', 'No description'))
-            url = r.get('href', r.get('url', ''))
-            formatted.append(f"{i}. {title}\n   {body}\n   Source: {url}")
+            # Format results for LLM summarization
+            formatted = []
+            for i, r in enumerate(results[:5], 1):
+                title = r.get('title', 'No title')
+                body = r.get('body', r.get('description', 'No description'))
+                url = r.get('href', r.get('url', ''))
+                formatted.append(f"{i}. {title}\n   {body}\n   Source: {url}")
 
-        results_text = "\n\n".join(formatted)
+            results_text = "\n\n".join(formatted)
 
-        # Summarize with LLM
-        summary_prompt = f"""Based on these search results, provide a clear and concise answer to the user's question.
+            # Summarize with LLM
+            summary_prompt = f"""Based on these search results, provide a clear and concise answer to the user's question.
 
 User's question: "{user_input}"
 
@@ -83,4 +94,6 @@ Search results:
 
 Provide a helpful summary. Cite sources when relevant. If the results don't fully answer the question, say so."""
 
-        return self.brain.generate_response(summary_prompt, context)
+            return self.brain.generate_response(summary_prompt, context)
+        except Exception as e:
+            return f"Sorry, an error occurred: {e}"

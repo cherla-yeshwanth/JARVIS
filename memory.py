@@ -56,60 +56,57 @@ class Memory:
 
     def _init_db(self):
         """Initialize SQLite tables."""
-        conn = sqlite3.connect(self.db_path)
-        conn.executescript('''
-            CREATE TABLE IF NOT EXISTS facts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                category TEXT NOT NULL,
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                confidence REAL DEFAULT 1.0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(category, key)
-            );
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executescript('''
+                CREATE TABLE IF NOT EXISTS facts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    confidence REAL DEFAULT 1.0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(category, key)
+                );
 
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                user_input TEXT NOT NULL,
-                response TEXT NOT NULL,
-                intent TEXT,
-                model_used TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    user_input TEXT NOT NULL,
+                    response TEXT NOT NULL,
+                    intent TEXT,
+                    model_used TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
 
-            CREATE TABLE IF NOT EXISTS patterns (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_type TEXT NOT NULL,
-                hour_of_day INTEGER,
-                day_of_week INTEGER,
-                count INTEGER DEFAULT 1,
-                last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(task_type, hour_of_day, day_of_week)
-            );
+                CREATE TABLE IF NOT EXISTS patterns (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_type TEXT NOT NULL,
+                    hour_of_day INTEGER,
+                    day_of_week INTEGER,
+                    count INTEGER DEFAULT 1,
+                    last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(task_type, hour_of_day, day_of_week)
+                );
 
-            CREATE TABLE IF NOT EXISTS reminders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message TEXT NOT NULL,
-                trigger_time DATETIME,
-                is_done INTEGER DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-        ''')
-        conn.commit()
-        conn.close()
+                CREATE TABLE IF NOT EXISTS reminders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message TEXT NOT NULL,
+                    trigger_time DATETIME,
+                    is_done INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ''')
+            conn.commit()
 
     def _count_facts(self) -> int:
-        conn = sqlite3.connect(self.db_path)
-        count = conn.execute('SELECT COUNT(*) FROM facts').fetchone()[0]
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            count = conn.execute('SELECT COUNT(*) FROM facts').fetchone()[0]
         return count
 
     def _count_conversations(self) -> int:
-        conn = sqlite3.connect(self.db_path)
-        count = conn.execute('SELECT COUNT(*) FROM conversations').fetchone()[0]
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            count = conn.execute('SELECT COUNT(*) FROM conversations').fetchone()[0]
         return count
 
     def _embed(self, text: str) -> Optional[List[float]]:
@@ -151,41 +148,38 @@ class Memory:
         """Store or update a user fact."""
         if self.privacy_mode:
             return
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('''
-            INSERT INTO facts (category, key, value, confidence, updated_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(category, key) DO UPDATE SET
-                value = excluded.value,
-                confidence = excluded.confidence,
-                updated_at = CURRENT_TIMESTAMP
-        ''', (category, key, value, confidence))
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('''
+                INSERT INTO facts (category, key, value, confidence, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(category, key) DO UPDATE SET
+                    value = excluded.value,
+                    confidence = excluded.confidence,
+                    updated_at = CURRENT_TIMESTAMP
+            ''', (category, key, value, confidence))
+            conn.commit()
         print(f"[MEMORY] Fact stored: [{category}] {key} = {value}")
 
     def get_facts(self, category: str = None) -> List[Tuple]:
         """Retrieve stored facts."""
-        conn = sqlite3.connect(self.db_path)
-        if category:
-            rows = conn.execute(
-                'SELECT category, key, value FROM facts WHERE category = ? ORDER BY updated_at DESC',
-                (category,)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                'SELECT category, key, value FROM facts ORDER BY updated_at DESC'
-            ).fetchall()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            if category:
+                rows = conn.execute(
+                    'SELECT category, key, value FROM facts WHERE category = ? ORDER BY updated_at DESC',
+                    (category,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    'SELECT category, key, value FROM facts ORDER BY updated_at DESC'
+                ).fetchall()
         return rows
 
     def delete_fact(self, key: str) -> bool:
         """Delete a specific fact."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute('DELETE FROM facts WHERE key LIKE ?', (f'%{key}%',))
-        conn.commit()
-        deleted = cursor.rowcount > 0
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute('DELETE FROM facts WHERE key LIKE ?', (f'%{key}%',))
+            conn.commit()
+            deleted = cursor.rowcount > 0
         return deleted
 
     # ─── Episode Memory (ChromaDB) ──────────────────────
@@ -243,23 +237,21 @@ class Memory:
         """Log a conversation exchange to SQLite."""
         if self.privacy_mode:
             return
-        conn = sqlite3.connect(self.db_path)
-        conn.execute(
-            '''INSERT INTO conversations (session_id, user_input, response, intent, model_used)
-               VALUES (?, ?, ?, ?, ?)''',
-            (session_id, user_input, response, intent, model_used)
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                '''INSERT INTO conversations (session_id, user_input, response, intent, model_used)
+                   VALUES (?, ?, ?, ?, ?)''',
+                (session_id, user_input, response, intent, model_used)
+            )
+            conn.commit()
 
     def get_recent_conversations(self, limit: int = 10) -> List[Tuple]:
         """Get recent conversation entries."""
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute(
-            'SELECT user_input, response, intent, timestamp FROM conversations ORDER BY timestamp DESC LIMIT ?',
-            (limit,)
-        ).fetchall()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                'SELECT user_input, response, intent, timestamp FROM conversations ORDER BY timestamp DESC LIMIT ?',
+                (limit,)
+            ).fetchall()
         return rows
 
     # ─── Pattern Memory ─────────────────────────────────
@@ -269,32 +261,30 @@ class Memory:
         if self.privacy_mode:
             return
         now = datetime.now()
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('''
-            INSERT INTO patterns (task_type, hour_of_day, day_of_week, count, last_used)
-            VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
-            ON CONFLICT(task_type, hour_of_day, day_of_week) DO UPDATE SET
-                count = count + 1,
-                last_used = CURRENT_TIMESTAMP
-        ''', (task_type, now.hour, now.weekday()))
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('''
+                INSERT INTO patterns (task_type, hour_of_day, day_of_week, count, last_used)
+                VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+                ON CONFLICT(task_type, hour_of_day, day_of_week) DO UPDATE SET
+                    count = count + 1,
+                    last_used = CURRENT_TIMESTAMP
+            ''', (task_type, now.hour, now.weekday()))
+            conn.commit()
 
     def get_patterns(self, hour: int = None) -> List[Tuple]:
         """Get task patterns, optionally filtered by hour."""
-        conn = sqlite3.connect(self.db_path)
-        if hour is not None:
-            rows = conn.execute(
-                '''SELECT task_type, count FROM patterns
-                   WHERE hour_of_day BETWEEN ? AND ?
-                   ORDER BY count DESC LIMIT 5''',
-                (hour - 1, hour + 1)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                'SELECT task_type, SUM(count) as total FROM patterns GROUP BY task_type ORDER BY total DESC LIMIT 10'
-            ).fetchall()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            if hour is not None:
+                rows = conn.execute(
+                    '''SELECT task_type, count FROM patterns
+                       WHERE hour_of_day BETWEEN ? AND ?
+                       ORDER BY count DESC LIMIT 5''',
+                    (hour - 1, hour + 1)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    'SELECT task_type, SUM(count) as total FROM patterns GROUP BY task_type ORDER BY total DESC LIMIT 10'
+                ).fetchall()
         return rows
 
     # ─── Full Context Builder ────────────────────────────
@@ -416,31 +406,29 @@ Or reply: NONE"""
 
     def export_memories(self, filepath: str) -> str:
         """Export all memories to a JSON file."""
-        conn = sqlite3.connect(self.db_path)
-
-        data = {
-            'exported_at': datetime.now().isoformat(),
-            'facts': [
-                {'category': r[0], 'key': r[1], 'value': r[2]}
-                for r in conn.execute('SELECT category, key, value FROM facts').fetchall()
-            ],
-            'conversations': [
-                {
-                    'session_id': r[0], 'user_input': r[1],
-                    'response': r[2], 'intent': r[3], 'timestamp': r[4]
-                }
-                for r in conn.execute(
-                    'SELECT session_id, user_input, response, intent, timestamp FROM conversations'
-                ).fetchall()
-            ],
-            'patterns': [
-                {'task_type': r[0], 'count': r[1]}
-                for r in conn.execute(
-                    'SELECT task_type, SUM(count) FROM patterns GROUP BY task_type'
-                ).fetchall()
-            ],
-        }
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            data = {
+                'exported_at': datetime.now().isoformat(),
+                'facts': [
+                    {'category': r[0], 'key': r[1], 'value': r[2]}
+                    for r in conn.execute('SELECT category, key, value FROM facts').fetchall()
+                ],
+                'conversations': [
+                    {
+                        'session_id': r[0], 'user_input': r[1],
+                        'response': r[2], 'intent': r[3], 'timestamp': r[4]
+                    }
+                    for r in conn.execute(
+                        'SELECT session_id, user_input, response, intent, timestamp FROM conversations'
+                    ).fetchall()
+                ],
+                'patterns': [
+                    {'task_type': r[0], 'count': r[1]}
+                    for r in conn.execute(
+                        'SELECT task_type, SUM(count) FROM patterns GROUP BY task_type'
+                    ).fetchall()
+                ],
+            }
 
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -452,13 +440,12 @@ Or reply: NONE"""
         if not confirm:
             return "Memory wipe requires confirmation. Say 'wipe memory confirm' to proceed."
 
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('DELETE FROM facts')
-        conn.execute('DELETE FROM conversations')
-        conn.execute('DELETE FROM patterns')
-        conn.execute('DELETE FROM reminders')
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('DELETE FROM facts')
+            conn.execute('DELETE FROM conversations')
+            conn.execute('DELETE FROM patterns')
+            conn.execute('DELETE FROM reminders')
+            conn.commit()
 
         # Clear ChromaDB
         if self.chroma_available:
@@ -474,37 +461,33 @@ Or reply: NONE"""
 
     def forget_about(self, topic: str) -> str:
         """Selectively forget facts and conversations about a topic."""
-        conn = sqlite3.connect(self.db_path)
-        facts_deleted = conn.execute(
-            'DELETE FROM facts WHERE key LIKE ? OR value LIKE ?',
-            (f'%{topic}%', f'%{topic}%')
-        ).rowcount
-        convos_deleted = conn.execute(
-            'DELETE FROM conversations WHERE user_input LIKE ? OR response LIKE ?',
-            (f'%{topic}%', f'%{topic}%')
-        ).rowcount
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            facts_deleted = conn.execute(
+                'DELETE FROM facts WHERE key LIKE ? OR value LIKE ?',
+                (f'%{topic}%', f'%{topic}%')
+            ).rowcount
+            convos_deleted = conn.execute(
+                'DELETE FROM conversations WHERE user_input LIKE ? OR response LIKE ?',
+                (f'%{topic}%', f'%{topic}%')
+            ).rowcount
+            conn.commit()
 
         return f"Forgot {facts_deleted} facts and {convos_deleted} conversations about '{topic}'."
 
     def get_conversation_analytics(self) -> dict:
         """Analyze conversation history for insights."""
-        conn = sqlite3.connect(self.db_path)
-
-        total = conn.execute('SELECT COUNT(*) FROM conversations').fetchone()[0]
-        by_intent = conn.execute(
-            'SELECT intent, COUNT(*) as cnt FROM conversations GROUP BY intent ORDER BY cnt DESC'
-        ).fetchall()
-        by_hour = conn.execute(
-            '''SELECT CAST(strftime('%H', timestamp) AS INT) as hour, COUNT(*) as cnt
-               FROM conversations GROUP BY hour ORDER BY cnt DESC LIMIT 5'''
-        ).fetchall()
-        recent_sessions = conn.execute(
-            'SELECT DISTINCT session_id FROM conversations ORDER BY timestamp DESC LIMIT 5'
-        ).fetchall()
-
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            total = conn.execute('SELECT COUNT(*) FROM conversations').fetchone()[0]
+            by_intent = conn.execute(
+                'SELECT intent, COUNT(*) as cnt FROM conversations GROUP BY intent ORDER BY cnt DESC'
+            ).fetchall()
+            by_hour = conn.execute(
+                '''SELECT CAST(strftime('%H', timestamp) AS INT) as hour, COUNT(*) as cnt
+                   FROM conversations GROUP BY hour ORDER BY cnt DESC LIMIT 5'''
+            ).fetchall()
+            recent_sessions = conn.execute(
+                'SELECT DISTINCT session_id FROM conversations ORDER BY timestamp DESC LIMIT 5'
+            ).fetchall()
 
         return {
             'total_conversations': total,

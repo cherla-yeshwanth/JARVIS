@@ -14,4 +14,10 @@ class ChatHandler:
 
     def handle(self, user_input: str, context: str = '') -> str:
         """Generate a conversational response with full AGI pipeline."""
-        return self.brain.generate_response(user_input, context)
+        # Input validation
+        if not isinstance(user_input, str) or not user_input.strip():
+            return "Sorry, I didn't receive any input."
+        try:
+            return self.brain.generate_response(user_input, context)
+        except Exception as e:
+            return f"Sorry, an error occurred: {e}"

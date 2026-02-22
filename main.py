@@ -31,88 +31,74 @@ from intent_filter import IntentFilter
 
 # Import speech-to-speech functions
 from speech_assistant import recognize_speech, speak_text
-from proactive import ProactiveEngine
-from safety import get_safety_summary
+from voice_layer import SpeechToText
+from wake_word_engine import WakeWordEngine
 
-# ─── Session ID ──────────────────────────────────────────
-SESSION_ID = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+stt = SpeechToText()
+intent_filter = IntentFilter(brain)
+is_listening = False
 
-def print_banner():
-    """Print the JARVIS startup banner."""
-    print(r"""
-     ██╗ █████╗ ██████╗ ██╗   ██╗██╗███████╗
-     ██║██╔══██╗██╔══██╗██║   ██║██║██╔════╝
-     ██║███████║██████╔╝██║   ██║██║███████╗
-██   ██║██╔══██║██╔══██╗╚██╗ ██╔╝██║╚════██║
-╚█████╔╝██║  ██║██║  ██║ ╚████╔╝ ██║███████║
- ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚══════╝
-    v1.0 — Your Personal AI Assistant
-    """)
+def on_wake():
+    global is_listening
+    if is_listening:
+        return
+    is_listening = True
 
-def run_text_mode(brain, memory, executor, tts, proactive):
-    """Run JARVIS in text input mode (terminal-based)."""
-    tts.speak(f"{ASSISTANT_NAME} is ready. How can I help you?")
-
-    intent_filter = IntentFilter(brain)
-
-    while True:
-        try:
-            user_input = input(f"\n{'─'*50}\nYou: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print(f"\n[{ASSISTANT_NAME}] Goodbye!")
-            break
+    try:
+        tts.speak("Yes?")
+        user_input = stt.listen()
 
         if not user_input:
-            continue
+            print("[STT] No speech detected.")
+            return
 
-        # Special commands
         lower = user_input.lower()
-        if lower in ('quit', 'exit', 'bye', 'goodbye', 'stop'):
-            tts.speak("Goodbye! Have a great day.")
-            break
-        if lower == 'status':
-            print(_get_status(brain, memory, tts, proactive))
-            continue
-        if lower == 'safety':
-            print(get_safety_summary())
-            continue
-        if lower == 'help':
-            print(_get_help())
-            continue
+        print(f"[STT] You said: {user_input}")
 
-        # Intent filter check before main pipeline
+        if lower in ('quit', 'exit', 'bye', 'goodbye', 'stop jarvis'):
+            tts.speak("Goodbye!")
+            sys.exit(0)
+
         if not intent_filter.is_command(user_input):
             print(f"[FILTER] Ambient speech ignored: {user_input}")
-            continue
+            return
 
-        # ─── Main Pipeline ───────────────────────────────
-        try:
-            # 1. Get memory context
-            context = memory.get_context(user_input)
+        context = memory.get_context(user_input)
+        routing = brain.route(user_input, context)
+        print(f"[BRAIN] Intent: {routing['intent'].value} | Model: {routing['model']}")
 
-            # 2. Route through brain
-            routing = brain.route(user_input, context)
-            print(f"[BRAIN] Intent: {routing['intent'].value} | Model: {routing['model']}")
+        response = executor.execute(routing)
+        stream_and_speak(response, tts)
 
-            # 3. Execute
-            response = executor.execute(routing)
+        memory.add_exchange(
+            session_id=SESSION_ID,
+            user_input=user_input,
+            response=response,
+            intent=routing['intent'].value,
+            model_used=routing['model'],
+        )
 
-            # 4. Output
-            tts.speak(response)
+    except Exception as e:
+        print(f"[ERROR] {e}")
+        tts.speak("I encountered an error. Please try again.")
+    finally:
+        is_listening = False
 
-            # 5. Store in memory
-            memory.add_exchange(
-                session_id=SESSION_ID,
-                user_input=user_input,
-                response=response,
-                intent=routing['intent'].value,
-                model_used=routing['model'],
-            )
+# Start wake word engine (now ONNX forced, model download ensured)
+wake_engine = WakeWordEngine(on_wake_callback=on_wake)
+wake_engine.start()
 
-        except Exception as e:
-            error_msg = f"Something went wrong: {e}"
-            print(f"[ERROR] {error_msg}")
-            tts.speak("I encountered an error. Please try again.")
+tts.speak(f"{ASSISTANT_NAME} is ready. Say hey jarvis to activate.")
+print(f"\n[{ASSISTANT_NAME}] Voice mode active. Say 'hey jarvis' to activate.")
+print(f"[{ASSISTANT_NAME}] Press Ctrl+C to exit.\n")
+
+# Keep main thread alive
+try:
+    signal.pause()
+except AttributeError:
+    import time
+    while True:
+        time.sleep(1)
 
 def run_voice_mode(brain, memory, executor, tts, proactive):
     """Run JARVIS in voice input mode (hotkey-activated)."""

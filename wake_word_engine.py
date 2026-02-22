@@ -20,13 +20,11 @@ class WakeWordEngine:
 
     def _loop(self):
         pa = pyaudio.PyAudio()
-        stream = pa.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=self.RATE,
-            input=True,
-            frames_per_buffer=self.CHUNK
-        )
+        stream = pa.open(format=pyaudio.paInt16,
+                         channels=1,
+                         rate=self.RATE,
+                         input=True,
+                         frames_per_buffer=self.CHUNK)
         while self.running:
             audio_chunk = np.frombuffer(
                 stream.read(self.CHUNK, exception_on_overflow=False),

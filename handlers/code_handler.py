@@ -14,6 +14,9 @@ class CodeHandler:
 
     def handle(self, user_input: str, context: str = '') -> str:
         """Handle code-related requests."""
+        # Input validation
+        if not isinstance(user_input, str) or not user_input.strip():
+            return "Sorry, I didn't receive any input."
         system = f"""{SYSTEM_PROMPT}
 You are an expert software developer. When writing code:
 - Include clear comments

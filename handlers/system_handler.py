@@ -32,7 +32,7 @@ except ImportError:
 class SystemHandler:
     """Windows system control handler with safety restrictions."""
 
-    def __init__(self, brain: Brain):
+    def __init__(self, brain=None):
         self.brain = brain
         self._psutil_available = False
         try:
@@ -40,43 +40,177 @@ class SystemHandler:
             self._psutil_available = True
         except ImportError:
             print("[SYSTEM] psutil not installed. Some system info unavailable.")
-
-    # ─── App Control ─────────────────────────────────────
-
-    # Common Windows app mappings
-    APP_MAP = {
-        'whatsapp': 'WhatsApp.exe',
-        'chrome': 'chrome.exe',
-        'google chrome': 'chrome.exe',
-        'firefox': 'firefox.exe',
-        'edge': 'msedge.exe',
-        'microsoft edge': 'msedge.exe',
-        'notepad': 'notepad.exe',
-        'calculator': 'calc.exe',
-        'calc': 'calc.exe',
-        'explorer': 'explorer.exe',
-        'file explorer': 'explorer.exe',
-        'files': 'explorer.exe',
-        'cmd': 'cmd.exe',
-        'terminal': 'wt.exe',
-        'windows terminal': 'wt.exe',
-        'vscode': 'code',
-        'vs code': 'code',
-        'visual studio code': 'code',
-        'spotify': 'spotify.exe',
-        'discord': 'discord.exe',
-        'slack': 'slack.exe',
-        'word': 'winword.exe',
-        'excel': 'excel.exe',
-        'powerpoint': 'powerpnt.exe',
-        'paint': 'mspaint.exe',
-        'snipping tool': 'snippingtool.exe',
-        'task manager': 'taskmgr.exe',
-        'settings': 'ms-settings:',
-        'control panel': 'control.exe',
+    SCREENSHOTS_DIR = Path(__file__).parent.parent / "data" / "screenshots"
+    SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+    # App aliases (merge masterplan and advanced)
+    APP_ALIASES = {
+        "notepad":        "notepad.exe",
+        "calculator":     "calc.exe",
+        "calc":           "calc.exe",
+        "paint":          "mspaint.exe",
+        "file explorer":  "explorer.exe",
+        "explorer":       "explorer.exe",
+        "task manager":   "taskmgr.exe",
+        "cmd":            "cmd.exe",
+        "command prompt": "cmd.exe",
+        "powershell":     "powershell.exe",
+        "chrome":         "chrome.exe",
+        "google chrome":  "chrome.exe",
+        "firefox":        "firefox.exe",
+        "edge":           "msedge.exe",
+        "microsoft edge": "msedge.exe",
+        "spotify":        "spotify.exe",
+        "discord":        "discord.exe",
+        "vs code":        "code.exe",
+        "vscode":         "code.exe",
+        "word":           "winword.exe",
+        "excel":          "excel.exe",
+        "powerpoint":     "powerpnt.exe",
+        "vlc":            "vlc.exe",
+        "whatsapp":       "whatsapp.exe",
+        "terminal":       "wt.exe",
+        "windows terminal": "wt.exe",
+        "slack":          "slack.exe",
+        "snipping tool":  "snippingtool.exe",
+        "settings":       "ms-settings:",
+        "control panel":  "control.exe",
     }
-
-
+    def open_app(self, app_name: str) -> str:
+        name_lower = app_name.lower().strip()
+        exe = self.APP_ALIASES.get(name_lower, app_name)
+        try:
+            import subprocess
+            proc = subprocess.Popen(
+                exe,
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            time.sleep(0.5)
+            if proc.poll() is None or proc.returncode == 0:
+                return f"Opened {app_name}."
+            return f"Launched {app_name} (exit code: {proc.returncode})."
+        except FileNotFoundError:
+            return f"Could not find '{app_name}'. Make sure it's installed and on your PATH."
+        except Exception as e:
+            return f"Failed to open {app_name}: {e}"
+    def take_screenshot(self, label: str = "") -> str:
+        try:
+            import mss
+            import mss.tools
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            suffix = f"_{label}" if label else ""
+            filename = self.SCREENSHOTS_DIR / f"screenshot{suffix}_{timestamp}.png"
+            with mss.mss() as sct:
+                monitor = sct.monitors[0]
+                sct_img = sct.grab(monitor)
+                mss.tools.to_png(sct_img.rgb, sct_img.size, output=str(filename))
+            return f"Screenshot saved to {filename}"
+        except Exception as e:
+            return f"Screenshot failed: {e}"
+    def get_system_info(self) -> str:
+        try:
+            import psutil
+            cpu = psutil.cpu_percent(interval=0.5)
+            ram = psutil.virtual_memory()
+            disk = psutil.disk_usage("C:\\")
+            battery = psutil.sensors_battery()
+            ram_used  = ram.used  / (1024 ** 3)
+            ram_total = ram.total / (1024 ** 3)
+            disk_used  = disk.used  / (1024 ** 3)
+            disk_total = disk.total / (1024 ** 3)
+            bat_str = (
+                f"{battery.percent:.0f}% ({'plugged in' if battery.power_plugged else 'on battery'})"
+                if battery else "N/A"
+            )
+            return (
+                f"OS: {platform.system()} {platform.release()}\n"
+                f"CPU Usage: {cpu}%\n"
+                f"RAM: {ram_used:.1f} GB / {ram_total:.1f} GB ({ram.percent}%)\n"
+                f"Disk (C:): {disk_used:.0f} GB / {disk_total:.0f} GB ({disk.percent}%)\n"
+                f"Battery: {bat_str}"
+            )
+        except Exception as e:
+            return f"Could not retrieve system info: {e}"
+    def run_command(self, command: str, working_dir: str = None) -> str:
+        from config import BLOCKED_COMMANDS
+        cmd_lower = command.lower()
+        for blocked in BLOCKED_COMMANDS:
+            if blocked in cmd_lower:
+                return f"Blocked: '{blocked}' is not allowed for safety reasons."
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=working_dir or str(Path.home())
+            )
+            output = result.stdout.strip() or result.stderr.strip() or "(no output)"
+            return f"Command output:\n{output}"
+        except subprocess.TimeoutExpired:
+            return "Command timed out after 30 seconds."
+        except Exception as e:
+            return f"Command failed: {e}"
+    def list_directory(self, path: str = None) -> str:
+        target = Path(path) if path else Path.home() / "Desktop"
+        if not target.exists():
+            return f"Directory not found: {target}"
+        try:
+            items = sorted(target.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
+            lines = [f"📁 {target}\n"]
+            for item in items[:30]:
+                icon = "📄" if item.is_file() else "📂"
+                size = f" ({item.stat().st_size // 1024} KB)" if item.is_file() else ""
+                lines.append(f"  {icon} {item.name}{size}")
+            if len(list(target.iterdir())) > 30:
+                lines.append("  ... (more items)")
+            return "\n".join(lines)
+        except PermissionError:
+            return f"Permission denied: {target}"
+    def handle(self, text: str, context: dict = None) -> str:
+        lower = text.lower()
+        if any(w in lower for w in ["screenshot", "capture screen", "take a screenshot"]):
+            return self.take_screenshot()
+        if any(w in lower for w in ["system info", "cpu", "ram", "memory", "disk space", "battery"]):
+            return self.get_system_info()
+        if "list" in lower and ("files" in lower or "folder" in lower or "directory" in lower):
+            path_match = re.search(r"in (.+?)$", text, re.IGNORECASE)
+            path = path_match.group(1).strip() if path_match else None
+            return self.list_directory(path)
+        if lower.startswith(("run ", "execute ", "command ")):
+            cmd = re.sub(r"^(run|execute|command)\s+", "", text, flags=re.IGNORECASE).strip()
+            return self.run_command(cmd)
+        for trigger in ["open ", "launch ", "start "]:
+            if lower.startswith(trigger):
+                app = text[len(trigger):].strip()
+                return self.open_app(app)
+        if "open" in lower or "launch" in lower or "start" in lower:
+            match = re.search(r"(?:open|launch|start)\s+(.+?)(?:\s+for me)?$", text, re.IGNORECASE)
+            try:
+                import psutil
+                cpu = psutil.cpu_percent(interval=0.5)
+                ram = psutil.virtual_memory()
+                disk = psutil.disk_usage("C:\\")
+                battery = psutil.sensors_battery()
+                ram_used  = ram.used  / (1024 ** 3)
+                ram_total = ram.total / (1024 ** 3)
+                disk_used  = disk.used  / (1024 ** 3)
+                disk_total = disk.total / (1024 ** 3)
+                bat_str = (
+                    f"{battery.percent:.0f}% ({'plugged in' if battery.power_plugged else 'on battery'})"
+                    if battery else "N/A"
+                )
+                return (
+                    f"OS: {platform.system()} {platform.release()}\n"
+                    f"CPU Usage: {cpu}%\n"
+                    f"RAM: {ram_used:.1f} GB / {ram_total:.1f} GB ({ram.percent}%)\n"
+                    f"Disk (C:): {disk_used:.0f} GB / {disk_total:.0f} GB ({disk.percent}%)\n"
+                    f"Battery: {bat_str}"
+                )
+            except Exception as e:
+                return f"Could not retrieve system info: {e}"
     def _open_app(self, app_name: str) -> str:
         """Open an application or website using Gemini-style strategy."""
         lower = app_name.lower().strip()
@@ -290,7 +424,7 @@ class SystemHandler:
                 "vscode", "vs code", "visual studio code", "chrome", "google chrome", "firefox", "edge", "microsoft edge", "notepad", "calculator", "calc", "explorer", "file explorer", "files", "cmd", "terminal", "windows terminal", "spotify", "discord", "slack", "word", "excel", "powerpoint", "paint", "snipping tool", "task manager", "settings", "control panel", "whatsapp"
             ]
             if lower in app_keywords:
-                exe = self.APP_MAP.get(lower)
+                exe = self.APP_ALIASES.get(lower)
                 if exe:
                     # VS Code special handling
                     if lower in ["vscode", "vs code", "visual studio code"]:
@@ -503,7 +637,7 @@ class SystemHandler:
                 pass
 
         # Try to open as a desktop app (check PATH and common install locations)
-        exe = self.APP_MAP.get(lower)
+        exe = self.APP_ALIASES.get(lower)
         if exe:
             if shutil.which(exe):
                 try:
@@ -551,7 +685,7 @@ class SystemHandler:
     def _close_app(self, app_name: str) -> str:
         """Close an application by name."""
         lower = app_name.lower().strip()
-        exe = self.APP_MAP.get(lower, f'{lower}.exe')
+        exe = self.APP_ALIASES.get(lower, f'{lower}.exe')
 
         # Safety: don't kill critical processes
         critical = ['explorer.exe', 'csrss.exe', 'winlogon.exe', 'svchost.exe',
@@ -789,83 +923,89 @@ class SystemHandler:
 
     def handle(self, user_input: str, context: str = '') -> str:
         """Route system commands to appropriate handler."""
-        lower = user_input.lower().strip()
+        # Input validation
+        if not isinstance(user_input, str) or not user_input.strip():
+            return "Sorry, I didn't receive any input."
+        try:
+            lower = user_input.lower().strip()
 
-        # Always perform a web search for 'search' commands
-        if lower.startswith('search '):
-            import webbrowser
-            query = user_input[7:].strip()
-            if not query:
-                return "Please specify what you want to search for."
-            search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-            try:
-                webbrowser.open(search_url)
-                return f"Searched Google for '{query}'."
-            except Exception as e:
-                return f"Failed to search Google: {e}"
+            # Always perform a web search for 'search' commands
+            if lower.startswith('search '):
+                import webbrowser
+                query = user_input[7:].strip()
+                if not query:
+                    return "Please specify what you want to search for."
+                search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+                try:
+                    webbrowser.open(search_url)
+                    return f"Searched Google for '{query}'."
+                except Exception as e:
+                    return f"Failed to search Google: {e}"
 
-        # WhatsApp Web: only open main page for WhatsApp-related commands
-        if lower in ["whatsapp", "open whatsapp", "start whatsapp", "launch whatsapp"]:
-            return self._open_app(user_input)
+            # WhatsApp Web: only open main page for WhatsApp-related commands
+            if lower in ["whatsapp", "open whatsapp", "start whatsapp", "launch whatsapp"]:
+                return self._open_app(user_input)
 
-        # YouTube search/play direct handling
-        if ("youtube" in lower and ("play " in lower or "search " in lower)):
-            return self._open_app(user_input)
+            # YouTube search/play direct handling
+            if ("youtube" in lower and ("play " in lower or "search " in lower)):
+                return self._open_app(user_input)
 
-        # Open apps/files/folders for 'open', 'launch', 'start' commands
-        if any(lower.startswith(w) for w in ['open ', 'launch ', 'start ']):
-            app = lower.split(maxsplit=1)[1] if ' ' in lower else ''
-            if 'coding setup' in lower or 'dev setup' in lower:
-                return self._open_coding_setup()
-            return self._open_app(app)
+            # Open apps/files/folders for 'open', 'launch', 'start' commands
+            if any(lower.startswith(w) for w in ['open ', 'launch ', 'start ']):
+                app = lower.split(maxsplit=1)[1] if ' ' in lower else ''
+                if 'coding setup' in lower or 'dev setup' in lower:
+                    return self._open_coding_setup()
+                return self._open_app(app)
 
-        # Close apps
-        if any(lower.startswith(w) for w in ['close ', 'kill ', 'stop ']):
-            app = lower.split(maxsplit=1)[1] if ' ' in lower else ''
-            return self._close_app(app)
+            # Close apps
+            if any(lower.startswith(w) for w in ['close ', 'kill ', 'stop ']):
+                app = lower.split(maxsplit=1)[1] if ' ' in lower else ''
+                return self._close_app(app)
 
-        # Volume
-        if 'volume' in lower or 'mute' in lower or 'unmute' in lower:
-            if 'up' in lower or 'increase' in lower or 'raise' in lower:
+            # Volume
+            if 'volume' in lower or 'mute' in lower or 'unmute' in lower:
+                if 'up' in lower or 'increase' in lower or 'raise' in lower:
+                    return self._set_volume('up')
+                elif 'down' in lower or 'decrease' in lower or 'lower' in lower:
+                    return self._set_volume('down')
+                elif 'unmute' in lower:
+                    return self._set_volume('unmute')
+                elif 'mute' in lower:
+                    return self._set_volume('mute')
                 return self._set_volume('up')
-            elif 'down' in lower or 'decrease' in lower or 'lower' in lower:
-                return self._set_volume('down')
-            elif 'unmute' in lower:
-                return self._set_volume('unmute')
-            elif 'mute' in lower:
-                return self._set_volume('mute')
-            return self._set_volume('up')
 
-        # Screenshot
-        if 'screenshot' in lower or 'screen capture' in lower:
-            return self._take_screenshot()
+            # Screenshot
+            if 'screenshot' in lower or 'screen capture' in lower:
+                return self._take_screenshot()
 
-        # System info
-        if any(w in lower for w in ['system info', 'system status', 'battery', 'cpu usage', 'disk space', 'ram']):
-            return self._get_system_info()
+            # System info
+            if any(w in lower for w in ['system info', 'system status', 'battery', 'cpu usage', 'disk space', 'ram']):
+                return self._get_system_info()
 
-        # IP address
-        if 'ip address' in lower or 'my ip' in lower:
-            return self._get_ip_address()
+            # IP address
+            if 'ip address' in lower or 'my ip' in lower:
+                return self._get_ip_address()
 
-        # Processes
-        if 'process' in lower or 'what is eating' in lower or 'top process' in lower:
-            return self._get_top_processes()
+            # Processes
+            if 'process' in lower or 'what is eating' in lower or 'top process' in lower:
+                return self._get_top_processes()
 
-        # File operations
-        if 'list files' in lower or 'show files' in lower:
-            parts = lower.replace('list files', '').replace('show files', '').replace('in ', '').strip()
-            directory = parts if parts else os.path.expanduser('~\\Desktop')
-            return self._list_files(directory)
+            # File operations
+            if 'list files' in lower or 'show files' in lower:
+                parts = lower.replace('list files', '').replace('show files', '').replace('in ', '').strip()
+                directory = parts if parts else os.path.expanduser('~\\Desktop')
+                return self._list_files(directory)
 
-        if 'read file' in lower:
-            filepath = lower.replace('read file', '').strip()
-            return self._read_file(filepath)
+            if 'read file' in lower:
+                filepath = lower.replace('read file', '').strip()
+                return self._read_file(filepath)
 
-        # Fallback: ask LLM to interpret the system command
-        return self.brain.generate_response(
-            f"The user wants to perform a system action: {user_input}. "
-            f"Describe what they likely want done, but note that I can only open/close apps, "
-            f"control volume, take screenshots, and manage files.",
-            context
-        )
+            # Fallback: ask LLM to interpret the system command
+            return self.brain.generate_response(
+                f"The user wants to perform a system action: {user_input}. "
+                f"Describe what they likely want done, but note that I can only open/close apps, "
+                f"control volume, take screenshots, and manage files.",
+                context
+            )
+        except Exception as e:
+            return f"Sorry, an error occurred: {e}"

@@ -14,23 +14,29 @@ class UtilityHandler:
 
     def handle(self, user_input: str, context: str = '') -> str:
         """Route utility commands."""
-        lower = user_input.lower().strip()
+        # Input validation
+        if not isinstance(user_input, str) or not user_input.strip():
+            return "Sorry, I didn't receive any input."
+        try:
+            lower = user_input.lower().strip()
 
-        # Password generation
-        if 'password' in lower or 'passphrase' in lower:
-            return self._generate_password(lower)
+            # Password generation
+            if 'password' in lower or 'passphrase' in lower:
+                return self._generate_password(lower)
 
-        # Unit conversion
-        if 'convert' in lower:
-            return self._convert_units(lower)
+            # Unit conversion
+            if 'convert' in lower:
+                return self._convert_units(lower)
 
-        # Text manipulation
-        if any(w in lower for w in ['uppercase', 'lowercase', 'word count',
-                                     'character count', 'char count', 'reverse']):
-            return self._text_manipulation(user_input)
+            # Text manipulation
+            if any(w in lower for w in ['uppercase', 'lowercase', 'word count',
+                                         'character count', 'char count', 'reverse']):
+                return self._text_manipulation(user_input)
 
-        # Calculator (default for utility)
-        return self._calculate(user_input)
+            # Calculator (default for utility)
+            return self._calculate(user_input)
+        except Exception as e:
+            return f"Sorry, an error occurred: {e}"
 
     # ─── Calculator ──────────────────────────────────────
 

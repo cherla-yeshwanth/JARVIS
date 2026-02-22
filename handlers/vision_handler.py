@@ -4,7 +4,7 @@ import base64, json, io, requests
 from PIL import Image
 from config import OLLAMA_HOST
 
-VISION_MODEL = 'llava:13b'  # Change to 'llava:7b' if low RAM
+VISION_MODEL = 'llava:7b'  # Use llava:7b for low RAM
 
 class VisionHandler:
     def __init__(self, brain):
@@ -47,6 +47,8 @@ class VisionHandler:
             )
             raw = resp.json().get('response', '{}').strip().strip('`').replace('json', '').strip()
             return json.loads(raw)
+        except requests.Timeout:
+            return {'found': False, 'description': 'Vision request timed out.', 'action': 'none'}
         except Exception as e:
             return {'found': False, 'description': f'Vision error: {e}', 'action': 'none'}
 
@@ -71,9 +73,15 @@ class VisionHandler:
         return plan.get('description', 'Done')
 
     def handle(self, user_input: str, context: str = '') -> str:
-        lower = user_input.lower()
-        b64 = self._screenshot_b64()
-        plan = self._ask_vision(b64, user_input)
-        if any(w in lower for w in ['read', 'see', 'what', 'show', 'describe']):
-            return plan.get('description', 'I cannot determine what is on screen.')
-        return self._act(plan)
+        # Input validation
+        if not isinstance(user_input, str) or not user_input.strip():
+            return "Sorry, I didn't receive any input."
+        try:
+            lower = user_input.lower()
+            b64 = self._screenshot_b64()
+            plan = self._ask_vision(b64, user_input)
+            if any(w in lower for w in ['read', 'see', 'what', 'show', 'describe']):
+                return plan.get('description', 'I cannot determine what is on screen.')
+            return self._act(plan)
+        except Exception as e:
+            return f"Sorry, an error occurred: {e}"
