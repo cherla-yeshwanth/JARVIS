@@ -22,10 +22,13 @@ DATA_DIR.mkdir(exist_ok=True)
 NOTES_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
 
+
 # ─── Ollama ──────────────────────────────────────────────
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 FAST_MODEL = os.getenv("FAST_MODEL", "qwen2.5:3b")       # Intent classification + simple chat
-SMART_MODEL = os.getenv("SMART_MODEL", "llama3.1:8b")     # Complex reasoning
+SMART_MODEL = os.getenv("SMART_MODEL", "mistral-nemo:12b")     # Complex/code reasoning
+CODE_MODEL = os.getenv("CODE_MODEL", "deepseek-coder-v2:16b")     # Code generation model
+VISION_MODEL = os.getenv("VISION_MODEL", "llava:13b")            # Vision model for screen tasks
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text") # Embeddings for ChromaDB
 
 # ─── Voice / Audio ───────────────────────────────────────
@@ -42,7 +45,7 @@ SAMPLE_RATE = 16000
 # ─── TTS (Piper) ────────────────────────────────────────
 PIPER_EXE = os.getenv("PIPER_EXE", str(MODELS_DIR / "piper.exe"))
 PIPER_MODEL = os.getenv("PIPER_MODEL", str(MODELS_DIR / "en_US-lessac-medium.onnx"))
-TTS_BACKEND = os.getenv("TTS_BACKEND", "pyttsx3")  # "piper" or "pyttsx3" (pyttsx3 = zero setup fallback)
+TTS_BACKEND = os.getenv("TTS_BACKEND", "kokoro")  # "kokoro" preferred, then "piper", then "pyttsx3"
 
 # ─── Memory ──────────────────────────────────────────────
 MAX_SHORT_TERM = 10          # Number of recent exchanges to keep in RAM

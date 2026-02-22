@@ -1,3 +1,29 @@
+class KokoroTTS:
+    """Best free neural TTS — sounds genuinely natural"""
+    def __init__(self):
+        self.available = False
+        try:
+            from kokoro import KPipeline
+            self.pipeline = KPipeline(lang_code='a')  # 'a' = American English
+            self.available = True
+            print('[TTS] Kokoro TTS loaded. Natural voice ready.')
+        except Exception as e:
+            print(f'[TTS] Kokoro not available: {e}')
+
+    def speak(self, text: str):
+        if not self.available or not text.strip():
+            return
+        import sounddevice as sd
+        print(f'[JARVIS]: {text}')
+        try:
+            # Voice options: 'am_adam', 'am_echo', 'bf_emma'
+            # 'am_adam' sounds closest to JARVIS — calm, confident, male
+            generator = self.pipeline(text, voice='am_adam', speed=1.05)
+            for _, _, audio in generator:
+                sd.play(audio, samplerate=24000)
+                sd.wait()
+        except Exception as e:
+            print(f'[TTS] Kokoro error: {e}')
 """
 JARVIS v1.0 — Text-to-Speech Module
 Supports two backends:
@@ -109,32 +135,29 @@ class TextToSpeech:
         self.backend = None
         self.backend_name = "none"
 
-        if TTS_BACKEND == "piper":
-            piper = PiperTTS()
-            if piper.available:
-                self.backend = piper
-                self.backend_name = "piper"
-            else:
-                print("[TTS] Piper not available, falling back to pyttsx3...")
-                fallback = Pyttsx3TTS()
-                if fallback.available:
-                    self.backend = fallback
-                    self.backend_name = "pyttsx3"
-        else:
-            pyttsx3_tts = Pyttsx3TTS()
-            if pyttsx3_tts.available:
-                self.backend = pyttsx3_tts
-                self.backend_name = "pyttsx3"
-            else:
-                # Try Piper as fallback
-                piper = PiperTTS()
-                if piper.available:
-                    self.backend = piper
-                    self.backend_name = "piper"
+        # Try Kokoro first (best free option)
+        kokoro = KokoroTTS()
+        if kokoro.available:
+            self.backend = kokoro
+            self.backend_name = "kokoro"
+            return
 
-        if self.backend is None:
-            self.backend_name = "print-only"
-            print("[TTS] No TTS backend available. Will print responses only.")
+        # Piper next
+        piper = PiperTTS()
+        if piper.available:
+            self.backend = piper
+            self.backend_name = "piper"
+            return
+
+        # pyttsx3 as last resort
+        py3 = Pyttsx3TTS()
+        if py3.available:
+            self.backend = py3
+            self.backend_name = "pyttsx3"
+            return
+
+        self.backend_name = "print-only"
+        print("[TTS] No TTS backend available. Will print responses only.")
 
     def speak(self, text: str):
         """Speak text using the active backend."""

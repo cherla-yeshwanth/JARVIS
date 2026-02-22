@@ -1,3 +1,10 @@
+def stream_and_speak(text, tts):
+    """Stream TTS output as it is generated (for large responses)."""
+    # If tts has a streaming method, use it; else fallback to speak()
+    if hasattr(tts, 'speak_streaming'):
+        tts.speak_streaming(text)
+    else:
+        tts.speak(text)
 """
 JARVIS v1.0 — Main Service
 The primary entry point. Orchestrates all subsystems:
@@ -20,6 +27,7 @@ from brain import Brain
 from memory import Memory
 from executor import Executor
 from tts import TextToSpeech
+from intent_filter import IntentFilter
 
 # Import speech-to-speech functions
 from speech_assistant import recognize_speech, speak_text
@@ -43,10 +51,9 @@ def print_banner():
 
 def run_text_mode(brain, memory, executor, tts, proactive):
     """Run JARVIS in text input mode (terminal-based)."""
-    print(f"\n[{ASSISTANT_NAME}] Text mode active. Type your commands below.")
-    print(f"[{ASSISTANT_NAME}] Special commands: 'quit', 'exit', 'status', 'safety', 'help'\n")
-
     tts.speak(f"{ASSISTANT_NAME} is ready. How can I help you?")
+
+    intent_filter = IntentFilter(brain)
 
     while True:
         try:
@@ -71,6 +78,11 @@ def run_text_mode(brain, memory, executor, tts, proactive):
             continue
         if lower == 'help':
             print(_get_help())
+            continue
+
+        # Intent filter check before main pipeline
+        if not intent_filter.is_command(user_input):
+            print(f"[FILTER] Ambient speech ignored: {user_input}")
             continue
 
         # ─── Main Pipeline ───────────────────────────────
@@ -104,10 +116,12 @@ def run_text_mode(brain, memory, executor, tts, proactive):
 
 def run_voice_mode(brain, memory, executor, tts, proactive):
     """Run JARVIS in voice input mode (hotkey-activated)."""
-    from voice_layer import SpeechToText, HotkeyListener
+    from voice_layer import SpeechToText
+    from wake_word_engine import WakeWordEngine
 
     stt = SpeechToText()
     is_listening = False
+    intent_filter = IntentFilter(brain)
 
     def on_hotkey():
         nonlocal is_listening
@@ -128,13 +142,19 @@ def run_voice_mode(brain, memory, executor, tts, proactive):
                 tts.speak("Goodbye!")
                 sys.exit(0)
 
+            # Intent filter check before main pipeline
+            if not intent_filter.is_command(user_input):
+                print(f"[FILTER] Ambient speech ignored: {user_input}")
+                is_listening = False
+                return
+
             # Main pipeline
             context = memory.get_context(user_input)
             routing = brain.route(user_input, context)
             print(f"[BRAIN] Intent: {routing['intent'].value} | Model: {routing['model']}")
 
             response = executor.execute(routing)
-            tts.speak_streaming(response)
+            stream_and_speak(response, tts)
 
             memory.add_exchange(
                 session_id=SESSION_ID,
@@ -150,43 +170,20 @@ def run_voice_mode(brain, memory, executor, tts, proactive):
         finally:
             is_listening = False
 
-    hotkey = HotkeyListener(on_hotkey)
-    hotkey.start()
+    # Start always-on wake word engine
+    wake_engine = WakeWordEngine(on_wake_callback=on_hotkey)
+    wake_engine.start()
 
-    tts.speak(f"{ASSISTANT_NAME} is ready. Press {HOTKEY} to speak.")
-
-    print(f"\n[{ASSISTANT_NAME}] Voice mode active. Press '{HOTKEY}' to speak.")
+    tts.speak(f"{ASSISTANT_NAME} is ready. Say 'hey jarvis' to speak.")
+    print(f"\n[{ASSISTANT_NAME}] Voice mode active. Say 'hey jarvis' to activate.")
     print(f"[{ASSISTANT_NAME}] Press Ctrl+C or say 'quit' to exit.\n")
 
-    # Also allow text input while waiting for voice
-    try:
-        while True:
-            try:
-                user_input = input(f"You (type or press {HOTKEY}): ").strip()
-                if not user_input:
-                    continue
-
-                lower = user_input.lower()
-                if lower in ('quit', 'exit', 'bye'):
-                    tts.speak("Goodbye!")
-                    break
-                if lower == 'status':
-                    print(_get_status(brain, memory, tts, proactive))
-                    continue
-
-                context = memory.get_context(user_input)
-                routing = brain.route(user_input, context)
-                response = executor.execute(routing)
-                tts.speak(response)
-                memory.add_exchange(SESSION_ID, user_input, response,
-                                    routing['intent'].value, routing['model'])
-
-            except EOFError:
-                break
-    except KeyboardInterrupt:
-        pass
-    finally:
-        hotkey.stop()
+    # Ensure IntentFilter is used before every pipeline step
+    # Register VisionHandler and PhoneHandler in brain/executor (pseudo-code, actual integration needed)
+    # Integrate AutonomyGate in risky handlers (pseudo-code, actual integration needed)
+    # Use stream_and_speak for all TTS output in both text and voice modes
+    # Update requirements.txt and .env for all dependencies (manual step)
+    # Test each layer independently (manual step)
 
 def _get_status(brain, memory, tts, proactive) -> str:
     """Get system status."""

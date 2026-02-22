@@ -28,9 +28,18 @@ class Intent(Enum):
     NOTES    = 'notes'
     UTILITY  = 'utility'
     CHAT     = 'chat'
+    VISION   = 'vision'
+    AUTONOMY = 'autonomy'
+    PHONE    = 'phone'
 
-# ─── Quick-match patterns (skip LLM for obvious intents) ──
+    # ─── Quick-match patterns (skip LLM for obvious intents) ──
 INTENT_PATTERNS = {
+    Intent.AUTONOMY: [
+        'remind me', 'reminder', 'proactive', 'suggest', 'autonomy', 'self-initiate', 'self initiated', 'self-initiated', 'daily brief', 'morning brief', 'agenda', 'routine', 'habit', 'motivate', 'motivation', 'check in', 'check-in', 'periodic', 'interval', 'habit tracker', 'goal', 'goals', 'self improvement', 'self-improvement', 'self help', 'self-help',
+    ],
+    Intent.PHONE: [
+        'call', 'phone', 'dial', 'sms', 'text', 'send message', 'whatsapp', 'notification', 'missed call', 'incoming call', 'outgoing call', 'contact', 'contacts', 'mobile', 'cell', 'ring', 'voicemail', 'caller', 'hang up', 'answer', 'mute call', 'unmute call',
+    ],
     Intent.UTILITY: [
         'calculate', 'convert', 'password', 'generate password',
         'what is', 'how much is', 'math', 'uppercase', 'lowercase',
@@ -61,6 +70,12 @@ INTENT_PATTERNS = {
         'write code', 'write a script', 'debug', 'fix this code',
         'explain this code', 'python script', 'javascript',
         'function that', 'program', 'algorithm',
+    ],
+    Intent.VISION: [
+        'see on screen', 'what do you see', 'read screen', 'describe screen',
+        'find button', 'click button', 'where is', 'screenshot', 'vision',
+        'scroll', 'type on screen', 'ui automation', 'look at', 'show me',
+        'highlight', 'select', 'detect', 'screen', 'window', 'image',
     ],
 }
 

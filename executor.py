@@ -12,7 +12,11 @@ from handlers.system_handler import SystemHandler
 from handlers.code_handler import CodeHandler
 from handlers.memory_handler import MemoryHandler
 from handlers.notes_handler import NotesHandler
+
 from handlers.utility_handler import UtilityHandler
+from handlers.vision_handler import VisionHandler
+from handlers.autonomy import AutonomyHandler
+from handlers.phone_handler import PhoneHandler
 
 class Executor:
     """Routes tasks to specialized handlers based on intent classification."""
@@ -30,6 +34,9 @@ class Executor:
             Intent.MEMORY:  MemoryHandler(memory),
             Intent.NOTES:   NotesHandler(memory),
             Intent.UTILITY: UtilityHandler(),
+            Intent.VISION:  VisionHandler(brain),
+            Intent.AUTONOMY: AutonomyHandler(brain, memory),
+            Intent.PHONE:   PhoneHandler(brain),
         }
         print(f"[EXECUTOR] Initialized {len(self.handlers)} handlers.")
 
